@@ -116,7 +116,7 @@ def download_video():
     if not url: return jsonify({"error":"URL দেওয়া হয়নি"}), 400
     vid_id = str(uuid.uuid4())[:8]
     ydl_opts = {
-        "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": "bestvideo[height<=1080]+bestaudio/bestvideo+bestaudio/best",
         "outtmpl": str(UPLOAD_FOLDER / f"{vid_id}.%(ext)s"),
         "merge_output_format": "mp4",
         "quiet": True,
