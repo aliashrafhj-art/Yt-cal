@@ -22,6 +22,12 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 YT_CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "")
 YT_CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET", "")
 
+# cookies.txt — env variable থেকে তৈরি করা হবে
+COOKIES_PATH = Path("cookies.txt")
+YT_COOKIES = os.environ.get("YT_COOKIES", "")
+if YT_COOKIES and not COOKIES_PATH.exists():
+    COOKIES_PATH.write_text(YT_COOKIES)
+
 scheduler = BackgroundScheduler(timezone="Asia/Dhaka")
 scheduler.start()
 scheduled_jobs = {}
@@ -109,7 +115,6 @@ def download_video():
     url = request.json.get("url","").strip()
     if not url: return jsonify({"error":"URL দেওয়া হয়নি"}), 400
     vid_id = str(uuid.uuid4())[:8]
-    cookies_path = Path("cookies.txt")
     ydl_opts = {
         "format": "bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "outtmpl": str(UPLOAD_FOLDER / f"{vid_id}.%(ext)s"),
@@ -119,7 +124,7 @@ def download_video():
         "extractor_args": {"youtube": {"player_client": ["web","mweb"]}},
         "http_headers": {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"}
     }
-    if cookies_path.exists(): ydl_opts["cookiefile"] = str(cookies_path)
+    if COOKIES_PATH.exists(): ydl_opts["cookiefile"] = str(COOKIES_PATH)
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
