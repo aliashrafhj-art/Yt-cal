@@ -322,9 +322,13 @@ app.post('/api/yt/save-audio', async (req, res) => {
   })();
 });
 
-// Real-time: YT video link → troll edit → YouTube upload directly
+// Real-time: YT video link → troll edit → save output, return preview URL
 app.post('/api/run/realtime', async (req, res) => {
-  const { ytUrl, phonkFileId, dropTime, freezeSec, textOverlay, textTime } = req.body;
+  const { ytUrl, phonkFileId, dropTime, freezeSec, textOverlay, textTime,
+          introText, introSize, introPos,
+          climaxText, climaxSize, climaxPos,
+          skullSize, skullPos,
+          colorBrightness, colorContrast, colorSaturation, colorPreset } = req.body;
   if (!ytUrl || !phonkFileId) return res.status(400).json({ error: 'ytUrl and phonkFileId required' });
   const jobId = createJob();
   res.json({ jobId });
@@ -336,63 +340,138 @@ app.post('/api/run/realtime', async (req, res) => {
     try {
       const cfg = loadConfig();
       const driveToken = await getDriveToken();
-      const ytToken = await getYTToken();
       if (!driveToken) throw new Error('Drive সংযুক্ত নয়');
-      if (!ytToken) throw new Error('YouTube সংযুক্ত নয়');
-      if (!cfg.skullPath || !fs.existsSync(cfg.skullPath)) throw new Error('Skull PNG নেই');
+      if (!cfg.skullPath || !fs.existsSync(cfg.skullPath)) throw new Error('Skull PNG নেই — Edit tab থেকে আপলোড করুন');
 
-      // Download video from YT
+      // Download video from YT — max 720p
       const videoPath = path.join(TEMP_DIR, `rt_vid_${jobId}.mp4`);
       tempFiles.push(videoPath);
-      log('YT থেকে video নামানো হচ্ছে...');
-      await execAsync(`yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --merge-output-format mp4 --no-playlist -o "${videoPath}" "${ytUrl}"`);
+      log('YT থেকে video নামানো হচ্ছে (720p)...');
+      await execAsync(`yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[height<=720]" --merge-output-format mp4 --no-playlist -o "${videoPath}" "${ytUrl}"`, { maxBuffer: 100*1024*1024, timeout: 300000 });
       log('Video নামানো হয়েছে');
 
       // Download phonk from Drive
       const phonkPath = path.join(TEMP_DIR, `rt_phonk_${jobId}.mp3`);
       tempFiles.push(phonkPath);
-      log('Phonk Drive থেকে নামানো হচ্ছে...');
-      const pr = await fetch(`https://www.googleapis.com/drive/v3/files/${phonkFileId}?alt=media`, {
-        headers: { 'Authorization': `Bearer ${driveToken}` }
-      });
+      log('Phonk নামানো হচ্ছে...');
+      const pr = await fetch(`https://www.googleapis.com/drive/v3/files/${phonkFileId}?alt=media`, { headers: { 'Authorization': `Bearer ${driveToken}` } });
       if (!pr.ok) throw new Error('Phonk download failed');
       fs.writeFileSync(phonkPath, Buffer.from(await pr.arrayBuffer()));
       log('Phonk নামানো হয়েছে');
 
-      // Get duration
-      const { stdout: durOut } = await execAsync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`);
-      const duration = parseFloat(durOut.trim());
+      // Probe video
+      const { stdout: probeOut } = await execAsync(`ffprobe -v error -select_streams v:0 -show_entries stream=width,height -show_entries format=duration -of json "${videoPath}"`);
+      const probeData = JSON.parse(probeOut);
+      const duration = parseFloat(probeData.format.duration);
+      const vw = probeData.streams[0]?.width || 720;
+      const vh = probeData.streams[0]?.height || 1280;
+      const targetW = vw > vh ? 1920 : 1080;
+      const targetH = vw > vh ? 1080 : 1920;
+
       const fSec = Math.min(parseFloat(freezeSec) || cfg.freezeSec || 3, duration * 0.8);
       const fStart = Math.max(0.1, duration - fSec);
       const drop = parseFloat(dropTime) || 0;
-      log(`Duration: ${duration.toFixed(1)}s | Freeze: শেষ ${fSec.toFixed(1)}s`);
+      log(`Duration: ${duration.toFixed(1)}s | ${vw}x${vh} → ${targetW}x${targetH} | Freeze: ${fSec}s`);
+
+      // Color grade values
+      let bright = parseFloat(colorBrightness) || 0;
+      let cont = parseFloat(colorContrast) || 1;
+      let sat = parseFloat(colorSaturation) || 1;
+      if (colorPreset === 'dark') { bright = -0.1; cont = 1.3; sat = 0.8; }
+      else if (colorPreset === 'phonk_red') { bright = -0.05; cont = 1.4; sat = 1.2; }
+      else if (colorPreset === 'cold_blue') { bright = 0; cont = 1.2; sat = 0.7; }
+
+      // Skull size + position
+      const sSize = parseInt(skullSize) || 280;
+      const sPos = skullPos || 'center';
+      const skullX = sPos === 'left' ? '20' : sPos === 'right' ? 'W-w-20' : '(W-w)/2';
+      const skullY = sPos === 'top' ? '20' : sPos === 'bottom' ? 'H-h-20' : '(H-h)/2';
+
+      // Text helper
+      const posY = (p) => p === 'top' ? 'h*0.08' : p === 'bottom' ? 'h*0.85' : 'h*0.5-text_h/2';
 
       const outPath = path.join(TEMP_DIR, `rt_out_${jobId}.mp4`);
-      tempFiles.push(outPath);
-      const txt = (textOverlay || cfg.textOverlay || '').replace(/[':]/g, '');
-      const tTime = parseFloat(textTime) || cfg.textTime || 2;
+      // NOT added to tempFiles — keep for preview/upload
+      const scale = `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2`;
+      const colorGrade = `eq=brightness=${bright}:contrast=${cont}:saturation=${sat}`;
 
-      // ffmpeg — mute original audio, use only phonk
-      let fc;
-      if (txt) {
-        fc = `[0:v]trim=end=${fStart},setpts=PTS-STARTPTS[before];[0:v]trim=start=${fStart},setpts=PTS-STARTPTS,select='eq(n\\,0)',loop=loop=-1:size=1,trim=duration=${fSec}[frozen];[frozen]eq=brightness=-0.25:saturation=0.2:contrast=1.5[dark];[1:v]scale=280:280[skull];[dark][skull]overlay=(W-w)/2:(H-h)/2[withskull];[withskull]drawtext=text='${txt}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=h*0.15:enable='between(t,0,${tTime})':box=1:boxcolor=black@0.5:boxborderw=8[withtext];[before][withtext]concat=n=2:v=1:a=0[outv];[2:a]atrim=start=${drop},asetpts=PTS-STARTPTS,volume=1.5[phonk_trim];[phonk_trim]atrim=end=${duration},asetpts=PTS-STARTPTS[outa]`;
-      } else {
-        fc = `[0:v]trim=end=${fStart},setpts=PTS-STARTPTS[before];[0:v]trim=start=${fStart},setpts=PTS-STARTPTS,select='eq(n\\,0)',loop=loop=-1:size=1,trim=duration=${fSec}[frozen];[frozen]eq=brightness=-0.25:saturation=0.2:contrast=1.5[dark];[1:v]scale=280:280[skull];[dark][skull]overlay=(W-w)/2:(H-h)/2[withskull];[before][withskull]concat=n=2:v=1:a=0[outv];[2:a]atrim=start=${drop},asetpts=PTS-STARTPTS,volume=1.5[phonk_trim];[phonk_trim]atrim=end=${duration},asetpts=PTS-STARTPTS[outa]`;
-      }
+      // Build filter complex
+      // Part 1: before freeze — scaled + color grade
+      // Part 2: freeze — extra dark + skull + climax text
+      // Intro text on full video via drawtext enable range
+
+      const iText = (introText || '').replace(/[':]/g, '');
+      const iSize = parseInt(introSize) || 40;
+      const iPos = posY(introPos || 'top');
+      const iTime = parseFloat(textTime) || 2;
+
+      const cText = (climaxText || 'YOU ARE COOKED').replace(/[':]/g, '');
+      const cSize = parseInt(climaxSize) || 48;
+      const cPos = posY(climaxPos || 'bottom');
+
+      // before: scaled + color grade + intro text
+      let beforeFilter = `[0:v]${scale},${colorGrade}`;
+      if (iText) beforeFilter += `,drawtext=text='${iText}':fontcolor=white:fontsize=${iSize}:x=(w-text_w)/2:y=${iPos}:enable='between(t,0,${iTime})':box=1:boxcolor=black@0.5:boxborderw=6`;
+      beforeFilter += `,trim=end=${fStart},setpts=PTS-STARTPTS[before]`;
+
+      // frozen: same scale + extra dark + skull + climax text
+      let frozenFilter = `[0:v]${scale},eq=brightness=${bright-0.2}:contrast=${cont+0.2}:saturation=0.15`;
+      frozenFilter += `,trim=start=${fStart},setpts=PTS-STARTPTS,select='eq(n\\,0)',loop=loop=-1:size=1,trim=duration=${fSec}[frozen_raw]`;
+
+      const skullFilter = `[1:v]scale=${sSize}:${sSize}[skull_s]`;
+      let overlayFilter = `[frozen_raw][skull_s]overlay=${skullX}:${skullY}[with_skull]`;
+      let climaxFilter = `[with_skull]drawtext=text='${cText}':fontcolor=white:fontsize=${cSize}:x=(w-text_w)/2:y=${cPos}:box=1:boxcolor=black@0.6:boxborderw=8[frozen]`;
+
+      const audioFilter = `[2:a]atrim=start=${drop},asetpts=PTS-STARTPTS,volume=1.5[phonk_t];[phonk_t]atrim=end=${duration},asetpts=PTS-STARTPTS[outa]`;
+      const concatFilter = `[before][frozen]concat=n=2:v=1:a=0[outv]`;
+
+      const fc = `${beforeFilter};${frozenFilter};${skullFilter};${overlayFilter};${climaxFilter};${audioFilter};${concatFilter}`;
 
       log('ffmpeg চলছে...');
-      // -an on input 0 mutes original audio
-      await execAsync(`ffmpeg -y -i "${videoPath}" -i "${cfg.skullPath}" -i "${phonkPath}" -filter_complex "${fc}" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 23 -c:a aac -shortest "${outPath}"`);
-      log('Edit হয়েছে, YouTube-এ upload হচ্ছে...');
+      await execAsync(`ffmpeg -y -i "${videoPath}" -i "${cfg.skullPath}" -i "${phonkPath}" -filter_complex "${fc}" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 23 -threads 2 -c:a aac -shortest "${outPath}"`, { maxBuffer: 100*1024*1024, timeout: 600000 });
 
-      // Upload to YT
+      // Cleanup video/phonk but keep output for preview
+      try { fs.unlinkSync(videoPath); } catch {}
+      try { fs.unlinkSync(phonkPath); } catch {}
+
+      const previewUrl = `/temp/rt_out_${jobId}.mp4`;
+      log('Edit সম্পন্ন! Preview দেখুন');
+      jobs[jobId] = { status: 'preview', log: jobs[jobId].log, result: { previewUrl, outPath, jobId } };
+
+    } catch(e) {
+      tempFiles.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
+      log('Error: ' + e.message);
+      jobs[jobId] = { status: 'error', error: e.message, log: jobs[jobId].log };
+    }
+  })();
+});
+
+// Upload edited video to YouTube (after preview approval)
+app.post('/api/run/upload', async (req, res) => {
+  const { jobId, caption, description } = req.body;
+  if (!jobId) return res.status(400).json({ error: 'jobId required' });
+  const job = jobs[jobId];
+  if (!job || !job.result || !job.result.outPath) return res.status(404).json({ error: 'Job/file not found' });
+
+  const uploadJobId = createJob();
+  res.json({ jobId: uploadJobId });
+  (async () => {
+    const fetch = (await import('node-fetch')).default;
+    jobs[uploadJobId] = { status: 'running', log: ['YouTube-এ upload হচ্ছে...'] };
+    const log = (m) => { console.log(m); jobs[uploadJobId].log = [...jobs[uploadJobId].log, m]; };
+    try {
+      const ytToken = await getYTToken();
+      if (!ytToken) throw new Error('YouTube সংযুক্ত নয়');
+      const outPath = job.result.outPath;
+      if (!fs.existsSync(outPath)) throw new Error('Video file পাওয়া যায়নি');
       const videoBuffer = fs.readFileSync(outPath);
-      const title = `Troll Edit ${new Date().toLocaleDateString('bn-BD')}`.substring(0, 100);
+      const uploadTitle = (caption || `Troll Edit`).substring(0, 100);
+      const uploadDesc = description || 'Wait for the end...\n\n#shorts #viral #phonk #trolledit #skulledit #waitfortheend';
       const metaBody = JSON.stringify({
-        snippet: { title, description: 'Wait for the end...\n\n#shorts #viral #phonk #trolledit #skulledit #waitfortheend', tags: ['shorts', 'viral', 'phonk', 'troll edit', 'skull edit', 'satisfying', 'wait for end'], categoryId: '22' },
+        snippet: { title: uploadTitle, description: uploadDesc, tags: ['shorts','viral','phonk','troll edit','skull edit','satisfying','wait for end'], categoryId: '22' },
         status: { privacyStatus: 'public' }
       });
-      const boundary = `rt${jobId}`;
+      const boundary = `up${uploadJobId}`;
       const p1 = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metaBody}\r\n--${boundary}\r\nContent-Type: video/mp4\r\n\r\n`);
       const p2 = Buffer.from(`\r\n--${boundary}--`);
       const fullBody = Buffer.concat([p1, videoBuffer, p2]);
@@ -404,13 +483,12 @@ app.post('/api/run/realtime', async (req, res) => {
       const upText = await upRes.text();
       if (!upRes.ok) throw new Error('YT upload: ' + upText);
       const ytData = JSON.parse(upText);
+      try { fs.unlinkSync(outPath); } catch {}
       log(`আপলোড সফল: https://youtu.be/${ytData.id}`);
-      tempFiles.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
-      jobs[jobId] = { status: 'done', log: jobs[jobId].log, result: { url: `https://youtu.be/${ytData.id}` } };
+      jobs[uploadJobId] = { status: 'done', log: jobs[uploadJobId].log, result: { url: `https://youtu.be/${ytData.id}` } };
     } catch(e) {
-      tempFiles.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
       log('Error: ' + e.message);
-      jobs[jobId] = { status: 'error', error: e.message, log: jobs[jobId].log };
+      jobs[uploadJobId] = { status: 'error', error: e.message, log: jobs[uploadJobId].log };
     }
   })();
 });
