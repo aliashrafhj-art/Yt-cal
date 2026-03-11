@@ -217,15 +217,21 @@ async function dlPhonk(fileId, dest) {
 }
 
 async function detectBeats(phP, drop, maxDur) {
-  const beatTxt = path.join(TEMP_DIR, 'beats_' + Date.now() + '.txt');
+  // ffmpeg astats দিয়ে RMS level বের করো — pipe ছাড়া, stderr capture করে parse করো
   try {
-    await execAsync(
-      'ffmpeg -i "' + phP + '" -af "atrim=start=' + drop + ',asetpts=PTS-STARTPTS,aresample=22050,asetnsamples=512,astats=metadata=1:reset=1" -f null - 2>&1 | grep "lavfi.astats.Overall.RMS_level" | awk -F= \'{print $2}\' > "' + beatTxt + '"',
-      { maxBuffer: 20*1024*1024, timeout: 60000, shell: true }
+    const { stderr } = await execAsync(
+      'ffmpeg -i "' + phP + '" -af "atrim=start=' + drop + ',asetpts=PTS-STARTPTS,aresample=22050,asetnsamples=512,astats=metadata=1:reset=1" -f null -',
+      { maxBuffer: 30*1024*1024, timeout: 60000 }
     );
-    const lines = fs.existsSync(beatTxt) ? fs.readFileSync(beatTxt, 'utf8').trim().split('\n').filter(Boolean) : [];
+    const lines = (stderr || '').split('\n');
+    const vals = [];
+    for (const l of lines) {
+      if (l.includes('lavfi.astats.Overall.RMS_level=')) {
+        const v = parseFloat(l.split('=')[1]);
+        if (!isNaN(v) && isFinite(v)) vals.push(v);
+      }
+    }
     const frameDur = 512 / 22050;
-    const vals = lines.map(l => parseFloat(l)).filter(v => !isNaN(v) && isFinite(v));
     if (vals.length > 10) {
       const avg = vals.reduce((a,b)=>a+b,0) / vals.length;
       const thresh = avg * 1.15;
@@ -234,12 +240,10 @@ async function detectBeats(phP, drop, maxDur) {
         const t = i * frameDur;
         if (v > thresh && t - lastBeat > 0.3 && t < maxDur) { beats.push(parseFloat(t.toFixed(3))); lastBeat = t; }
       });
-      try { fs.unlinkSync(beatTxt); } catch {}
       if (beats.length >= 4) return beats;
     }
   } catch(e) {}
-  try { fs.unlinkSync(beatTxt); } catch {}
-  // Fallback BPM
+  // Fallback BPM 140
   const bpm = 140, interval = 60 / bpm;
   const beats = []; let t = 0;
   while (t < maxDur) { beats.push(parseFloat(t.toFixed(3))); t += interval; }
@@ -598,54 +602,8 @@ app.post('/api/movie/process', async (req, res) => {
       if (beatSync && phP) {
         log('Beat detect করা হচ্ছে...');
 
-        // Detect beats from phonk using ffmpeg ebur128 + silencedetect trick
-        // We use astats per frame to find peaks = beats
-        const beatTxt = path.join(TEMP_DIR, 'beats_' + pId + '.txt');
-        try {
-          await execAsync(
-            'ffmpeg -i "' + phP + '" -af "atrim=start=' + dp + ',asetpts=PTS-STARTPTS,ebur128=metadata=1" -f null - 2>&1 | grep "TARGET:" | awk \'{print $2}\' | head -500 > "' + beatTxt + '"',
-            { maxBuffer: 20*1024*1024, timeout: 60000, shell: true }
-          );
-        } catch(e) {}
-
-        // Better: use aubio-style via ffmpeg showinfo on audio peaks
-        const beatTxt2 = path.join(TEMP_DIR, 'beats2_' + pId + '.txt');
-        try {
-          await execAsync(
-            'ffmpeg -i "' + phP + '" -af "atrim=start=' + dp + ',asetpts=PTS-STARTPTS,aresample=22050,asetnsamples=512,astats=metadata=1:reset=1" -f null - 2>&1 | grep "lavfi.astats.Overall.RMS_level" | awk -F= \'{print $2}\' > "' + beatTxt2 + '"',
-            { maxBuffer: 20*1024*1024, timeout: 60000, shell: true }
-          );
-        } catch(e) {}
-
-        // Parse RMS levels and find peaks (beats)
-        let beatTimes = [];
-        try {
-          const rmsLines = fs.existsSync(beatTxt2) ? fs.readFileSync(beatTxt2, 'utf8').trim().split('\n').filter(Boolean) : [];
-          const frameDur = 512 / 22050; // ~23ms per frame
-          const rmsVals = rmsLines.map(l => parseFloat(l)).filter(v => !isNaN(v) && isFinite(v));
-          if (rmsVals.length > 10) {
-            const avg = rmsVals.reduce((a,b)=>a+b,0) / rmsVals.length;
-            const thresh = avg * 1.15; // 15% above average = beat
-            let lastBeat = -0.5;
-            rmsVals.forEach((v, i) => {
-              const t = i * frameDur;
-              if (v > thresh && t - lastBeat > 0.3 && t < cd) { // min 300ms between beats
-                beatTimes.push(parseFloat(t.toFixed(3)));
-                lastBeat = t;
-              }
-            });
-          }
-        } catch(e) {}
-
-        // Fallback: if no beats detected, use BPM-based timing
-        if (beatTimes.length < 4) {
-          log('Beat fallback: BPM estimate করা হচ্ছে...');
-          // Estimate BPM from phonk (typical phonk = 130-160 BPM)
-          const bpm = 140;
-          const beatInterval = 60 / bpm;
-          let t = 0;
-          while (t < cd) { beatTimes.push(parseFloat(t.toFixed(3))); t += beatInterval; }
-        }
+        // Beat detect — shared detectBeats function use করো (reliable, no pipe)
+        let beatTimes = await detectBeats(phP, dp, cd);
 
         log('Beat পাওয়া গেছে: ' + beatTimes.length + ' টি');
 
