@@ -384,6 +384,21 @@ function colorFilter(preset) {
 }
 function fmt(s) { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),ss=Math.floor(s%60); return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0'); }
 
+// Thumbnail for scene list
+app.get('/api/movie/thumb', async (req, res) => {
+  const { jobId, t } = req.query;
+  const job = jobs[jobId];
+  if (!job || !job.result || !job.result.moviePath) return res.status(404).end();
+  const thumbPath = path.join(TEMP_DIR, 'thumb_' + jobId + '_' + Math.floor(t||0) + '.jpg');
+  try {
+    if (!fs.existsSync(thumbPath)) {
+      await execAsync('ffmpeg -y -ss ' + (parseFloat(t)||0) + ' -i "' + job.result.moviePath + '" -vframes 1 -vf "scale=160:90:force_original_aspect_ratio=decrease" "' + thumbPath + '"', { timeout: 10000 });
+    }
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.send(fs.readFileSync(thumbPath));
+  } catch(e) { res.status(500).end(); }
+});
+
 app.post('/api/movie/download', async (req, res) => {
   const { url } = req.body; if (!url) return res.status(400).json({ error: 'url required' });
   const jobId = createJob(); res.json({ jobId });
@@ -464,15 +479,143 @@ app.post('/api/movie/process', async (req, res) => {
       }
 
       const oVol = parseFloat(origVolume) || 0.7, pVol = parseFloat(phonkVolume) || 1.2, dp = parseFloat(dropTime) || 0;
+      const beatSync = req.body.beatSync === true || req.body.beatSync === 'true';
       const wm = (watermark || '').replace(/[':]/g, '');
+      const ovText = (req.body.overlayText || '').replace(/[':]/g, '');
+      const ovSize = parseInt(req.body.overlaySize) || 18;
+      const ovColor = (req.body.overlayColor || 'white').replace(/[':]/g, '');
+      const tPosY = parseFloat(req.body.textPosY) || 0.15;
       let vf = colorFilter(colorPreset || 'believer');
       if (fs.existsSync(srtP)) {
         const es = srtP.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
         vf += ',subtitles=\'' + es + '\':force_style=\'FontName=Impact,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Bold=1,Alignment=2,MarginV=80\'';
       }
       if (wm) vf += ',drawtext=text=\'' + wm + '\':fontcolor=red:fontsize=13:x=(w-text_w)/2:y=h-45:bold=1:alpha=0.85';
+      if (ovText) vf += ',drawtext=text=\'' + ovText + '\':fontcolor=' + ovColor + ':fontsize=' + ovSize + ':x=(w-text_w)/2:y=h*' + tPosY.toFixed(2) + ':box=1:boxcolor=black@0.5:boxborderw=5:bold=1';
 
       const outP = path.join(TEMP_DIR, 'mvout_' + pId + '.mp4');
+
+      // ===== BEAT SYNC JUMP CUT =====
+      if (beatSync && phP) {
+        log('Beat detect করা হচ্ছে...');
+
+        // Detect beats from phonk using ffmpeg ebur128 + silencedetect trick
+        // We use astats per frame to find peaks = beats
+        const beatTxt = path.join(TEMP_DIR, 'beats_' + pId + '.txt');
+        try {
+          await execAsync(
+            'ffmpeg -i "' + phP + '" -af "atrim=start=' + dp + ',asetpts=PTS-STARTPTS,ebur128=metadata=1" -f null - 2>&1 | grep "TARGET:" | awk \'{print $2}\' | head -500 > "' + beatTxt + '"',
+            { maxBuffer: 20*1024*1024, timeout: 60000, shell: true }
+          );
+        } catch(e) {}
+
+        // Better: use aubio-style via ffmpeg showinfo on audio peaks
+        const beatTxt2 = path.join(TEMP_DIR, 'beats2_' + pId + '.txt');
+        try {
+          await execAsync(
+            'ffmpeg -i "' + phP + '" -af "atrim=start=' + dp + ',asetpts=PTS-STARTPTS,aresample=22050,asetnsamples=512,astats=metadata=1:reset=1" -f null - 2>&1 | grep "lavfi.astats.Overall.RMS_level" | awk -F= \'{print $2}\' > "' + beatTxt2 + '"',
+            { maxBuffer: 20*1024*1024, timeout: 60000, shell: true }
+          );
+        } catch(e) {}
+
+        // Parse RMS levels and find peaks (beats)
+        let beatTimes = [];
+        try {
+          const rmsLines = fs.existsSync(beatTxt2) ? fs.readFileSync(beatTxt2, 'utf8').trim().split('\n').filter(Boolean) : [];
+          const frameDur = 512 / 22050; // ~23ms per frame
+          const rmsVals = rmsLines.map(l => parseFloat(l)).filter(v => !isNaN(v) && isFinite(v));
+          if (rmsVals.length > 10) {
+            const avg = rmsVals.reduce((a,b)=>a+b,0) / rmsVals.length;
+            const thresh = avg * 1.15; // 15% above average = beat
+            let lastBeat = -0.5;
+            rmsVals.forEach((v, i) => {
+              const t = i * frameDur;
+              if (v > thresh && t - lastBeat > 0.3 && t < cd) { // min 300ms between beats
+                beatTimes.push(parseFloat(t.toFixed(3)));
+                lastBeat = t;
+              }
+            });
+          }
+        } catch(e) {}
+
+        // Fallback: if no beats detected, use BPM-based timing
+        if (beatTimes.length < 4) {
+          log('Beat fallback: BPM estimate করা হচ্ছে...');
+          // Estimate BPM from phonk (typical phonk = 130-160 BPM)
+          const bpm = 140;
+          const beatInterval = 60 / bpm;
+          let t = 0;
+          while (t < cd) { beatTimes.push(parseFloat(t.toFixed(3))); t += beatInterval; }
+        }
+
+        log('Beat পাওয়া গেছে: ' + beatTimes.length + ' টি');
+
+        // Build jump cut filter: at each beat, flash/zoom the video
+        // We use "select" to skip frames + zoom punch effect at beat points
+        // Create expression: at beat times, apply zoom + brightness flash
+        const beatExpr = beatTimes.map(bt => 'between(t,' + bt + ',' + (bt+0.08).toFixed(3) + ')').join('+');
+        const flashFilter = beatExpr.length > 0
+          ? ',eq=brightness=\'if(' + beatExpr + ',0.3,0)\':contrast=\'if(' + beatExpr + ',1.4,1)\''
+          : '';
+
+        // Jump cut: at each beat, seek slightly forward in the video (creates cut feel)
+        // Build setpts expression that skips 0.05s at each beat
+        let skipExpr = '';
+        if (beatTimes.length > 1) {
+          // Build a select filter that drops frames right before beat and shows frame after
+          // Simpler: use trim + concat approach for first few beats
+          const cuts = beatTimes.filter((_, i) => i % 2 === 0).slice(0, 8); // every other beat, max 8 cuts
+          if (cuts.length >= 2) {
+            // Build segments between cuts with small jumps
+            const segments = [];
+            for (let i = 0; i < cuts.length - 1; i++) {
+              const segStart = cuts[i];
+              const segEnd = cuts[i+1] - 0.04; // trim 40ms before next beat = jump cut feel
+              if (segEnd > segStart + 0.2) segments.push({ s: segStart, e: segEnd });
+            }
+            // Last segment
+            segments.push({ s: cuts[cuts.length-1], e: cd });
+
+            if (segments.length >= 2) {
+              log('Jump cut segments: ' + segments.length + ' টি তৈরি হচ্ছে...');
+              // Cut each segment to separate file then concat
+              const segFiles = [];
+              for (let i = 0; i < segments.length; i++) {
+                const seg = segments[i];
+                const segP = path.join(TEMP_DIR, 'seg_' + pId + '_' + i + '.mp4');
+                tmp.push(segP);
+                await execAsync('ffmpeg -y -ss ' + seg.s + ' -i "' + clipP + '" -t ' + (seg.e - seg.s).toFixed(3) + ' -c copy "' + segP + '"', { maxBuffer: 20*1024*1024, timeout: 60000 });
+                segFiles.push(segP);
+              }
+              // Concat list
+              const concatList = path.join(TEMP_DIR, 'concat_' + pId + '.txt');
+              tmp.push(concatList);
+              fs.writeFileSync(concatList, segFiles.map(f => 'file \'' + f + '\'').join('\n'));
+              const joinedP = path.join(TEMP_DIR, 'joined_' + pId + '.mp4');
+              tmp.push(joinedP);
+              await execAsync('ffmpeg -y -f concat -safe 0 -i "' + concatList + '" -c copy "' + joinedP + '"', { maxBuffer: 50*1024*1024, timeout: 120000 });
+              // Now apply color + audio on joined
+              log('Color grade + audio mix হচ্ছে...');
+              await execAsync('ffmpeg -y -i "' + joinedP + '" -i "' + phP + '" -filter_complex "[0:v]' + vf + flashFilter + '[outv];[0:a]volume=' + oVol + '[oa];[1:a]atrim=start=' + dp + ',asetpts=PTS-STARTPTS,volume=' + pVol + '[pa];[oa][pa]amix=inputs=2:duration=first[outa]" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 22 -threads 2 -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 600000 });
+              log('Beat sync সম্পন্ন ✓');
+              tmp.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
+              try { if(fs.existsSync(srtP)) fs.unlinkSync(srtP); } catch {}
+              log('সম্পন্ন! Preview দেখুন ✓');
+              jobs[pId] = { status: 'preview', log: jobs[pId].log, result: { previewUrl: '/temp/mvout_' + pId + '.mp4', outPath: outP, procJobId: pId } };
+              return;
+            }
+          }
+        }
+        // Fallback: just flash effect without cut
+        log('Flash effect দিয়ে beat sync হচ্ছে...');
+        await execAsync('ffmpeg -y -i "' + clipP + '" -i "' + phP + '" -filter_complex "[0:v]' + vf + flashFilter + '[outv];[0:a]volume=' + oVol + '[oa];[1:a]atrim=start=' + dp + ',asetpts=PTS-STARTPTS,volume=' + pVol + '[pa];[oa][pa]amix=inputs=2:duration=first[outa]" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 22 -threads 2 -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 600000 });
+        tmp.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
+        try { if(fs.existsSync(srtP)) fs.unlinkSync(srtP); } catch {}
+        log('সম্পন্ন! Preview দেখুন ✓');
+        jobs[pId] = { status: 'preview', log: jobs[pId].log, result: { previewUrl: '/temp/mvout_' + pId + '.mp4', outPath: outP, procJobId: pId } };
+        return;
+      }
+      // ===== NORMAL PROCESSING =====
       log('ffmpeg processing...');
       if (phP) {
         await execAsync('ffmpeg -y -i "' + clipP + '" -i "' + phP + '" -filter_complex "[0:v]' + vf + '[outv];[0:a]volume=' + oVol + '[oa];[1:a]atrim=start=' + dp + ',asetpts=PTS-STARTPTS,volume=' + pVol + ',atrim=end=' + cd + ',asetpts=PTS-STARTPTS[pa];[oa][pa]amix=inputs=2:duration=first[outa]" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 22 -threads 2 -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 600000 });
@@ -501,6 +644,23 @@ app.post('/api/movie/upload', async (req, res) => {
       jobs[upId] = { status: 'done', log: jobs[upId].log, result: { url: 'https://youtu.be/' + d.id } };
     } catch(e) { log('Error: ' + e.message); jobs[upId] = { status: 'error', error: e.message, log: jobs[upId].log }; }
   })();
+});
+
+// ========== THUMBNAIL ==========
+app.get('/api/movie/thumb', async (req, res) => {
+  try {
+    const { jobId, t } = req.query;
+    const job = jobs[jobId];
+    if (!job || !job.result || !job.result.moviePath) return res.status(404).end();
+    const sec = parseFloat(t) || 0;
+    const thumbPath = path.join(TEMP_DIR, 'thumb_' + jobId + '_' + Math.floor(sec) + '.jpg');
+    if (!fs.existsSync(thumbPath)) {
+      await execAsync('ffmpeg -y -ss ' + sec + ' -i "' + job.result.moviePath + '" -vframes 1 -vf "scale=120:68:force_original_aspect_ratio=increase,crop=120:68" "' + thumbPath + '"', { timeout: 15000 });
+    }
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    fs.createReadStream(thumbPath).pipe(res);
+  } catch(e) { res.status(500).end(); }
 });
 
 // ========== SCHEDULER ==========
