@@ -58,6 +58,11 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
 .log-line.ok{color:var(--accent2)}
 .log-line.err{color:var(--red)}
 .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:9999;max-width:80%;text-align:center;pointer-events:none}
+#beatSyncToggle:checked + span { background: var(--accent2) !important; }
+#beatSyncToggle:checked + span::before { transform: translateX(20px); }
+#beatSyncSlider::before { content:''; position:absolute; height:18px; width:18px; left:3px; bottom:3px; background:white; border-radius:50%; transition:.3s; }
+#editBeatSync:checked ~ span:first-of-type { background: var(--accent2) !important; }
+#editBeatSync:checked ~ #editBeatSyncKnob { transform: translateX(20px); }
 </style>
 </head>
 <body>
@@ -304,6 +309,21 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
 
     <div style="height:1px;background:var(--border);margin-bottom:12px"></div>
 
+    <!-- Beat Sync -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text2)">🥁 Beat Sync Cut</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Phonk beat-এ video jump cut হবে</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
+        <input type="checkbox" id="editBeatSync" style="opacity:0;width:0;height:0">
+        <span onclick="this.previousElementSibling.click()" style="position:absolute;cursor:pointer;inset:0;background:var(--surface2);border-radius:24px;transition:.3s;display:block"></span>
+        <span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;pointer-events:none" id="editBeatSyncKnob"></span>
+      </label>
+    </div>
+
+    <div style="height:1px;background:var(--border);margin-bottom:12px"></div>
+
     <!-- Skull -->
     <div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">💀 Skull</div>
@@ -412,84 +432,146 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
   <!-- Step 1: Download -->
   <div class="card">
     <div class="card-title">🎬 Step 1 — Movie Download</div>
-    <div style="font-size:11px;color:var(--text2);margin-bottom:8px">যেকোনো site-এর URL দাও (m3u8, YouTube, Facebook...)</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:8px">যেকোনো site URL দাও (m3u8, YouTube, Facebook...)</div>
     <input class="input" id="movieUrl" placeholder="https://... বা m3u8 link" style="margin-bottom:8px">
     <button class="btn btn-blue btn-full" id="movieDlBtn" onclick="downloadMovie()">⬇️ Download করো</button>
-    <div id="movieDlStatus" style="font-size:12px;color:var(--accent2);margin-top:8px;display:none"></div>
   </div>
 
   <!-- Step 2: Scene Detect -->
   <div class="card" id="sceneCard" style="display:none">
     <div class="card-title">🔍 Step 2 — Scene Detect</div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-      <label class="upload-form-label" style="margin:0;white-space:nowrap">Sensitivity</label>
-      <select class="input" id="sceneThreshold" style="width:auto">
-        <option value="0.2">High (বেশি scene)</option>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">
+      <select class="input" id="sceneThreshold">
+        <option value="0.2">High — বেশি scene</option>
         <option value="0.35" selected>Medium</option>
-        <option value="0.5">Low (কম scene)</option>
+        <option value="0.5">Low — কম scene</option>
       </select>
+      <button class="btn btn-purple" onclick="detectScenes()" style="white-space:nowrap">🔍 খোঁজো</button>
     </div>
-    <button class="btn btn-purple btn-full" onclick="detectScenes()">🔍 Scene খোঁজো</button>
   </div>
 
-  <!-- Scene List -->
+  <!-- Scene List with Thumbnails -->
   <div class="card" id="sceneListCard" style="display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div class="card-title" style="margin:0">📋 Scene List</div>
+      <div class="card-title" style="margin:0">🎞️ Scenes</div>
       <span id="sceneCount" style="font-size:11px;color:var(--text2)"></span>
     </div>
-    <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Scene বেছে নাও অথবা custom time দাও</div>
-    <div id="sceneList" style="max-height:250px;overflow-y:auto"></div>
+    <div id="sceneList" style="display:flex;flex-direction:column;gap:8px;max-height:360px;overflow-y:auto"></div>
+  </div>
 
-    <!-- Custom time -->
-    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
-      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">✏️ Custom Time</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-        <div><label class="upload-form-label">Start (HH:MM:SS)</label><input class="input" id="customStart" placeholder="00:01:30" style="font-size:12px"></div>
-        <div><label class="upload-form-label">End (HH:MM:SS)</label><input class="input" id="customEnd" placeholder="00:02:00" style="font-size:12px"></div>
+  <!-- Video Trimmer -->
+  <div class="card" id="trimmerCard" style="display:none">
+    <div class="card-title">✂️ Trim</div>
+    <!-- Mini video player -->
+    <video id="trimVideo" style="width:100%;border-radius:8px;background:#000;max-height:200px;margin-bottom:10px" controls></video>
+    <!-- Timeline bar -->
+    <div style="position:relative;height:40px;background:var(--surface2);border-radius:8px;margin-bottom:8px;overflow:hidden" id="timelineBar">
+      <!-- played region -->
+      <div id="timelinePlay" style="position:absolute;top:0;left:0;height:100%;background:var(--accent);opacity:0.3;pointer-events:none"></div>
+      <!-- selected region -->
+      <div id="timelineRegion" style="position:absolute;top:0;height:100%;background:var(--accent2);opacity:0.4;pointer-events:none"></div>
+      <!-- start handle -->
+      <div id="handleStart" style="position:absolute;top:0;width:4px;height:100%;background:var(--accent2);cursor:ew-resize;z-index:10;border-radius:2px"></div>
+      <!-- end handle -->
+      <div id="handleEnd" style="position:absolute;top:0;width:4px;height:100%;background:var(--red);cursor:ew-resize;z-index:10;border-radius:2px;right:0"></div>
+      <!-- playhead -->
+      <div id="playhead" style="position:absolute;top:0;width:2px;height:100%;background:white;pointer-events:none;z-index:5"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:6px">
+      <div>
+        <label class="upload-form-label">Start</label>
+        <input class="input" id="trimStart" type="text" placeholder="00:00:00" style="font-size:12px" oninput="onTrimInput()">
       </div>
+      <div style="text-align:center;padding-top:20px;font-size:12px;color:var(--accent2)" id="trimDurDisplay">0s</div>
+      <div>
+        <label class="upload-form-label">End</label>
+        <input class="input" id="trimEnd" type="text" placeholder="00:00:30" style="font-size:12px" oninput="onTrimInput()">
+      </div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-sm btn-ghost btn-full" onclick="setTrimPoint('start')">⬅️ Start এখানে</button>
+      <button class="btn btn-sm btn-ghost btn-full" onclick="setTrimPoint('end')">End এখানে ➡️</button>
     </div>
   </div>
 
-  <!-- Step 3: Edit Options -->
+  <!-- Edit Options -->
   <div class="card" id="movieEditCard" style="display:none">
-    <div class="card-title">⚙️ Step 3 — Edit Options</div>
+    <div class="card-title">⚙️ Edit Options</div>
 
     <!-- Color Grade -->
     <div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">🎨 Color Grade</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:6px">
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px">
         <button class="btn btn-sm btn-blue" id="mc_believer" onclick="setMoviePreset('believer')">Believer</button>
         <button class="btn btn-sm btn-ghost" id="mc_dark_cinema" onclick="setMoviePreset('dark_cinema')">Dark</button>
-        <button class="btn btn-sm btn-ghost" id="mc_phonk_red" onclick="setMoviePreset('phonk_red')">Phonk Red</button>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
-        <button class="btn btn-sm btn-ghost" id="mc_cold_blue" onclick="setMoviePreset('cold_blue')">Cold Blue</button>
-        <button class="btn btn-sm btn-ghost" id="mc_original" onclick="setMoviePreset('original')">Original</button>
+        <button class="btn btn-sm btn-ghost" id="mc_phonk_red" onclick="setMoviePreset('phonk_red')">Red</button>
+        <button class="btn btn-sm btn-ghost" id="mc_cold_blue" onclick="setMoviePreset('cold_blue')">Blue</button>
+        <button class="btn btn-sm btn-ghost" id="mc_original" onclick="setMoviePreset('original')">Off</button>
       </div>
     </div>
 
     <div style="height:1px;background:var(--border);margin-bottom:12px"></div>
 
-    <!-- Audio Mix -->
+    <!-- Text overlay drag preview -->
     <div style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:8px">🔊 Audio Mix</div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <label class="upload-form-label" style="margin:0;white-space:nowrap;width:120px">Original Volume</label>
-        <input class="input" id="origVolume" type="number" value="0.7" step="0.1" min="0" max="1" style="width:70px;font-size:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">✍️ Text Overlay — drag করে position ঠিক করো</div>
+      <div style="position:relative;width:100%;padding-top:177%;background:#111;border-radius:8px;overflow:hidden;margin-bottom:8px" id="textPreviewWrap">
+        <canvas id="textPreviewCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%"></canvas>
+        <!-- Draggable text badge -->
+        <div id="dragText" style="position:absolute;top:15%;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.6);color:white;padding:4px 10px;border-radius:6px;font-size:13px;font-weight:bold;cursor:grab;white-space:nowrap;user-select:none;border:1px dashed var(--accent2)">Wait for the end...</div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <label class="upload-form-label" style="margin:0;white-space:nowrap;width:120px">Phonk Volume</label>
-        <input class="input" id="phonkVolume" type="number" value="1.2" step="0.1" min="0" max="2" style="width:70px;font-size:12px">
+      <input class="input" id="overlayText" placeholder="Text লিখুন..." oninput="updateDragText()" style="margin-bottom:6px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div><label class="upload-form-label">Font Size</label><input class="input" id="overlaySize" type="number" value="18" min="10" max="50" style="font-size:12px"></div>
+        <div><label class="upload-form-label">Color</label>
+          <select class="input" id="overlayColor" style="font-size:12px">
+            <option value="white">White</option>
+            <option value="yellow">Yellow</option>
+            <option value="#FFD700">Gold</option>
+            <option value="#FF4757">Red</option>
+          </select>
+        </div>
       </div>
+      <div style="font-size:10px;color:var(--text2);margin-top:4px">Position: <span id="textPosDisplay">top: 15%</span></div>
+    </div>
+
+    <div style="height:1px;background:var(--border);margin-bottom:12px"></div>
+
+    <!-- Audio Mix + Waveform -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:8px">🎵 Phonk + Waveform</div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <div class="card-title" style="margin:0;font-size:11px">🎵 Phonk (Drive)</div>
+        <span style="font-size:11px;color:var(--text2)">Drive থেকে phonk লোড করো</span>
         <button class="btn btn-sm btn-blue" onclick="loadMoviePhonk()">লোড</button>
       </div>
-      <div id="moviePhonkList" style="max-height:120px;overflow-y:auto;margin-bottom:6px"><div style="font-size:12px;color:var(--text2)">লোড করুন</div></div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <label class="upload-form-label" style="margin:0;white-space:nowrap">Drop Time (s)</label>
-        <input class="input" id="movieDropTime" type="number" value="0" step="0.5" min="0" style="width:80px;font-size:12px">
+      <div id="moviePhonkList" style="max-height:100px;overflow-y:auto;margin-bottom:8px"><div style="font-size:12px;color:var(--text2)">লোড করুন</div></div>
+
+      <!-- Waveform canvas -->
+      <div style="background:var(--surface2);border-radius:8px;padding:8px;margin-bottom:8px;position:relative">
+        <div style="font-size:10px;color:var(--text2);margin-bottom:4px">Waveform — লাল line drag করে drop point সেট করো</div>
+        <canvas id="waveCanvas" height="60" style="width:100%;border-radius:4px;display:block;cursor:crosshair"></canvas>
+        <div style="font-size:11px;color:var(--accent2);margin-top:4px">Drop: <span id="waveDropDisplay">0.0s</span></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div><label class="upload-form-label">Original Vol</label><input class="input" id="origVolume" type="range" min="0" max="1" step="0.05" value="0.7" oninput="document.getElementById('origVolVal').textContent=this.value"><span id="origVolVal" style="font-size:11px;color:var(--text2)">0.7</span></div>
+        <div><label class="upload-form-label">Phonk Vol</label><input class="input" id="phonkVolume" type="range" min="0" max="2" step="0.05" value="1.2" oninput="document.getElementById('phonkVolVal').textContent=this.value"><span id="phonkVolVal" style="font-size:11px;color:var(--text2)">1.2</span></div>
+      </div>
+    </div>
+
+    <div style="height:1px;background:var(--border);margin-bottom:12px"></div>
+
+    <!-- Beat Sync -->
+    <div style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text2)">🥁 Beat Sync Cut</div>
+          <div style="font-size:10px;color:var(--text2);margin-top:2px">Phonk-এর beat-এ video jump cut হবে</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
+          <input type="checkbox" id="beatSyncToggle" style="opacity:0;width:0;height:0">
+          <span onclick="this.previousElementSibling.click()" style="position:absolute;cursor:pointer;inset:0;background:var(--surface2);border-radius:24px;transition:.3s" id="beatSyncSlider"></span>
+        </label>
       </div>
     </div>
 
@@ -498,7 +580,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
     <!-- Watermark -->
     <div>
       <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">💧 Watermark</div>
-      <input class="input" id="movieWatermark" placeholder="your channel name" value="op edits">
+      <input class="input" id="movieWatermark" value="op edits">
     </div>
   </div>
 
@@ -509,10 +591,8 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
     <textarea class="input" id="movieDesc" rows="2" style="resize:none">#shorts #viral #movieedit #cinematic</textarea>
   </div>
 
-  <!-- Process Button -->
   <button class="btn btn-red btn-full" id="movieProcessBtn" onclick="processMovieClip()" style="display:none;margin-bottom:10px">🎬 Process করো</button>
 
-  <!-- Movie Log -->
   <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
       <div class="card-title" style="margin:0">📊 লগ</div>
@@ -521,10 +601,9 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
     <div class="log-box" id="movieLog">লগ এখানে দেখাবে...</div>
   </div>
 
-  <!-- Movie Preview + Upload -->
   <div id="moviePreviewSection" style="display:none">
     <div class="card">
-      <div class="card-title">👁 Preview</div>
+      <div class="card-title">👁 Output Preview</div>
       <video id="moviePreviewVideo" controls style="width:100%;border-radius:8px;background:#000;max-height:400px"></video>
     </div>
     <button class="btn btn-green btn-full" onclick="uploadMovieClip()" id="movieUploadBtn" style="margin-bottom:10px">📤 YouTube-এ Upload করো</button>
@@ -851,6 +930,7 @@ async function runEdit() {
     colorContrast: document.getElementById('colorContrast').value,
     colorSaturation: document.getElementById('colorSat').value,
     colorPreset: activePreset,
+    beatSync: document.getElementById('editBeatSync').checked,
   };
   try {
     const r = await fetch(B()+'/api/run/realtime', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -976,7 +1056,13 @@ let currentMovieJobId = null;
 let currentMoviePreset = 'believer';
 let currentProcJobId = null;
 let selectedMoviePhonkId = null;
+let movieDuration = 0;
+let trimStartSec = 0, trimEndSec = 0;
+let waveDropTime = 0;
+let textPosY = 0.15; // 0..1 relative
+let isDraggingHandle = null;
 
+// ===== PRESET =====
 function setMoviePreset(p) {
   currentMoviePreset = p;
   ['believer','dark_cinema','phonk_red','cold_blue','original'].forEach(k => {
@@ -985,16 +1071,17 @@ function setMoviePreset(p) {
   });
 }
 
+// ===== LOG =====
 function addMovieLog(msg) {
   const box = document.getElementById('movieLog');
   if (box.textContent === 'লগ এখানে দেখাবে...') box.innerHTML = '';
   const line = document.createElement('div');
-  line.className = 'log-line' + (msg.includes('Error') ? ' err' : msg.includes('সম্পন্ন') || msg.includes('সফল') || msg.includes('✓') ? ' ok' : '');
+  line.className = 'log-line' + (msg.includes('Error') ? ' err' : msg.includes('✓') || msg.includes('সম্পন্ন') ? ' ok' : '');
   line.textContent = msg;
-  box.appendChild(line);
-  box.scrollTop = box.scrollHeight;
+  box.appendChild(line); box.scrollTop = box.scrollHeight;
 }
 
+// ===== DOWNLOAD =====
 async function downloadMovie() {
   const url = document.getElementById('movieUrl').value.trim();
   if (!url) { toast('URL দিন'); return; }
@@ -1002,64 +1089,164 @@ async function downloadMovie() {
   btn.textContent = '⏳ নামানো হচ্ছে...'; btn.disabled = true;
   document.getElementById('movieLog').innerHTML = '';
   try {
-    const r = await fetch(B() + '/api/movie/download', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+    const r = await fetch(B() + '/api/movie/download', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url }) });
     const d = await r.json();
-    if (!d.jobId) { toast('Error: ' + (d.error || '?')); btn.textContent = '⬇️ Download করো'; btn.disabled = false; return; }
+    if (!d.jobId) { toast('Error: ' + (d.error||'?')); btn.textContent='⬇️ Download করো'; btn.disabled=false; return; }
     currentMovieJobId = d.jobId;
     const t = setInterval(async () => {
       try {
-        const r2 = await fetch(B() + '/api/job/' + d.jobId);
-        const d2 = await r2.json();
-        if (d2.log) { document.getElementById('movieLog').innerHTML = ''; d2.log.forEach(l => addMovieLog(l)); }
+        const d2 = await (await fetch(B()+'/api/job/'+d.jobId)).json();
+        if (d2.log) { document.getElementById('movieLog').innerHTML=''; d2.log.forEach(l=>addMovieLog(l)); }
         if (d2.status === 'done') {
-          clearInterval(t);
-          btn.textContent = '⬇️ Download করো'; btn.disabled = false;
+          clearInterval(t); btn.textContent='⬇️ Download করো'; btn.disabled=false;
+          movieDuration = d2.result.duration || 0;
           document.getElementById('sceneCard').style.display = 'block';
           document.getElementById('movieEditCard').style.display = 'block';
           document.getElementById('movieCaptionCard').style.display = 'block';
           document.getElementById('movieProcessBtn').style.display = 'block';
-          toast('Download সম্পন্ন! Scene detect করুন');
-        } else if (d2.status === 'error') {
-          clearInterval(t); btn.textContent = '⬇️ Download করো'; btn.disabled = false; toast('Error!');
-        }
+          document.getElementById('trimmerCard').style.display = 'block';
+          initTrimmer(movieDuration);
+          initTextDrag();
+          toast('Download সম্পন্ন ✓');
+        } else if (d2.status === 'error') { clearInterval(t); btn.textContent='⬇️ Download করো'; btn.disabled=false; toast('Error!'); }
       } catch {}
     }, 3000);
-  } catch(e) { toast('Error: ' + e.message); btn.textContent = '⬇️ Download করো'; btn.disabled = false; }
+  } catch(e) { toast('Error: '+e.message); btn.textContent='⬇️ Download করো'; btn.disabled=false; }
 }
 
+// ===== VIDEO TRIMMER =====
+function secToHMS(s) {
+  const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=Math.floor(s%60);
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0');
+}
+function hmsToSec(str) {
+  const p = str.split(':').map(Number);
+  if (p.length === 3) return p[0]*3600+p[1]*60+p[2];
+  if (p.length === 2) return p[0]*60+p[1];
+  return parseFloat(str) || 0;
+}
+
+function initTrimmer(dur) {
+  trimStartSec = 0;
+  trimEndSec = Math.min(30, dur);
+  document.getElementById('trimStart').value = secToHMS(trimStartSec);
+  document.getElementById('trimEnd').value = secToHMS(trimEndSec);
+  updateTrimmerUI();
+
+  const bar = document.getElementById('timelineBar');
+  const hs = document.getElementById('handleStart');
+  const he = document.getElementById('handleEnd');
+
+  function startDrag(which, e) {
+    isDraggingHandle = which;
+    e.preventDefault();
+  }
+  hs.addEventListener('mousedown', e => startDrag('start', e));
+  he.addEventListener('mousedown', e => startDrag('end', e));
+  hs.addEventListener('touchstart', e => startDrag('start', e), {passive:false});
+  he.addEventListener('touchstart', e => startDrag('end', e), {passive:false});
+
+  document.addEventListener('mousemove', onDrag);
+  document.addEventListener('touchmove', onDrag, {passive:false});
+  document.addEventListener('mouseup', () => { isDraggingHandle = null; });
+  document.addEventListener('touchend', () => { isDraggingHandle = null; });
+
+  function onDrag(e) {
+    if (!isDraggingHandle || !movieDuration) return;
+    e.preventDefault();
+    const rect = bar.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const sec = pct * movieDuration;
+    if (isDraggingHandle === 'start') {
+      trimStartSec = Math.min(sec, trimEndSec - 1);
+    } else {
+      trimEndSec = Math.max(sec, trimStartSec + 1);
+    }
+    trimStartSec = Math.max(0, trimStartSec);
+    trimEndSec = Math.min(movieDuration, trimEndSec);
+    document.getElementById('trimStart').value = secToHMS(trimStartSec);
+    document.getElementById('trimEnd').value = secToHMS(trimEndSec);
+    updateTrimmerUI();
+  }
+
+  // Update playhead from video
+  const vid = document.getElementById('trimVideo');
+  vid.addEventListener('timeupdate', () => {
+    if (!movieDuration) return;
+    const pct = vid.currentTime / movieDuration;
+    document.getElementById('playhead').style.left = (pct*100) + '%';
+    document.getElementById('timelinePlay').style.width = (pct*100) + '%';
+  });
+}
+
+function updateTrimmerUI() {
+  if (!movieDuration) return;
+  const sp = trimStartSec / movieDuration, ep = trimEndSec / movieDuration;
+  document.getElementById('handleStart').style.left = (sp*100) + '%';
+  document.getElementById('handleEnd').style.left = (ep*100) + '%';
+  document.getElementById('timelineRegion').style.left = (sp*100) + '%';
+  document.getElementById('timelineRegion').style.width = ((ep-sp)*100) + '%';
+  const dur = trimEndSec - trimStartSec;
+  document.getElementById('trimDurDisplay').textContent = dur.toFixed(1) + 's';
+}
+
+function onTrimInput() {
+  trimStartSec = hmsToSec(document.getElementById('trimStart').value);
+  trimEndSec = hmsToSec(document.getElementById('trimEnd').value);
+  updateTrimmerUI();
+}
+
+function setTrimPoint(which) {
+  const vid = document.getElementById('trimVideo');
+  const cur = vid.currentTime || 0;
+  if (which === 'start') { trimStartSec = cur; document.getElementById('trimStart').value = secToHMS(cur); }
+  else { trimEndSec = cur; document.getElementById('trimEnd').value = secToHMS(cur); }
+  updateTrimmerUI();
+}
+
+// ===== SCENE LIST WITH THUMBNAILS =====
 async function detectScenes() {
   if (!currentMovieJobId) { toast('আগে download করুন'); return; }
   const threshold = document.getElementById('sceneThreshold').value;
   try {
-    const r = await fetch(B() + '/api/movie/scenes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: currentMovieJobId, threshold }) });
+    const r = await fetch(B()+'/api/movie/scenes', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ jobId: currentMovieJobId, threshold }) });
     const d = await r.json();
     if (!d.jobId) { toast('Error'); return; }
     toast('Scene খোঁজা হচ্ছে...');
     const t = setInterval(async () => {
       try {
-        const r2 = await fetch(B() + '/api/job/' + d.jobId);
-        const d2 = await r2.json();
+        const d2 = await (await fetch(B()+'/api/job/'+d.jobId)).json();
         if (d2.log) d2.log.forEach(l => addMovieLog(l));
         if (d2.status === 'done') {
           clearInterval(t);
           renderSceneList(d2.result.scenes);
           document.getElementById('sceneListCard').style.display = 'block';
-          toast(d2.result.scenes.length + ' টি scene পাওয়া গেছে');
+          toast(d2.result.scenes.length + ' টি scene পাওয়া গেছে ✓');
         } else if (d2.status === 'error') { clearInterval(t); toast('Error!'); }
       } catch {}
     }, 2000);
-  } catch(e) { toast('Error: ' + e.message); }
+  } catch(e) { toast('Error: '+e.message); }
 }
 
 function renderSceneList(scenes) {
   document.getElementById('sceneCount').textContent = scenes.length + ' টি';
   document.getElementById('sceneList').innerHTML = scenes.map(s => `
-    <div class="file-item" onclick="selectScene(${s.start}, ${s.end}, '${s.startFmt}', '${s.endFmt}', this)" style="flex-direction:column;align-items:flex-start;gap:3px">
-      <div style="display:flex;justify-content:space-between;width:100%">
-        <span style="font-size:12px;font-weight:700">Scene ${s.index}</span>
-        <span style="font-size:11px;color:var(--accent2)">${s.duration.toFixed(1)}s</span>
+    <div class="file-item" onclick="selectScene(${s.start},${s.end},'${s.startFmt}','${s.endFmt}',this)" style="gap:10px;align-items:center">
+      <div style="width:72px;height:40px;background:var(--surface2);border-radius:6px;flex-shrink:0;overflow:hidden;position:relative">
+        <img src="${B()}/api/movie/thumb?jobId=${currentMovieJobId}&t=${s.start}" 
+          style="width:100%;height:100%;object-fit:cover" 
+          onerror="this.style.display='none';this.nextSibling.style.display='flex'"
+          loading="lazy">
+        <div style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;font-size:18px">🎬</div>
       </div>
-      <div style="font-size:11px;color:var(--text2)">${s.startFmt} → ${s.endFmt}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;justify-content:space-between">
+          <span style="font-size:12px;font-weight:700">Scene ${s.index}</span>
+          <span style="font-size:11px;color:var(--accent2)">${s.duration.toFixed(1)}s</span>
+        </div>
+        <div style="font-size:11px;color:var(--text2)">${s.startFmt} → ${s.endFmt}</div>
+      </div>
     </div>
   `).join('');
 }
@@ -1067,13 +1254,60 @@ function renderSceneList(scenes) {
 function selectScene(start, end, startFmt, endFmt, el) {
   document.querySelectorAll('#sceneList .file-item').forEach(e => e.classList.remove('selected'));
   el.classList.add('selected');
-  document.getElementById('customStart').value = startFmt;
-  document.getElementById('customEnd').value = endFmt;
+  trimStartSec = start; trimEndSec = end;
+  document.getElementById('trimStart').value = startFmt;
+  document.getElementById('trimEnd').value = endFmt;
+  updateTrimmerUI();
+  const vid = document.getElementById('trimVideo');
+  if (vid.src) vid.currentTime = start;
+  document.getElementById('trimmerCard').scrollIntoView({ behavior: 'smooth' });
 }
 
+// ===== TEXT DRAG =====
+function initTextDrag() {
+  const wrap = document.getElementById('textPreviewWrap');
+  const drag = document.getElementById('dragText');
+  if (!wrap || !drag) return;
+  let dragging = false, startY = 0, startTop = 0;
+
+  function getTop() { return parseFloat(drag.style.top) || 15; }
+
+  drag.addEventListener('mousedown', e => { dragging=true; startY=e.clientY; startTop=getTop(); e.preventDefault(); });
+  drag.addEventListener('touchstart', e => { dragging=true; startY=e.touches[0].clientY; startTop=getTop(); e.preventDefault(); }, {passive:false});
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const wh = wrap.getBoundingClientRect().height;
+    const dy = ((e.clientY - startY) / wh) * 100;
+    const newTop = Math.max(5, Math.min(85, startTop + dy));
+    drag.style.top = newTop + '%';
+    textPosY = newTop / 100;
+    document.getElementById('textPosDisplay').textContent = 'top: ' + Math.round(newTop) + '%';
+  });
+  document.addEventListener('touchmove', e => {
+    if (!dragging) return;
+    e.preventDefault();
+    const wh = wrap.getBoundingClientRect().height;
+    const dy = ((e.touches[0].clientY - startY) / wh) * 100;
+    const newTop = Math.max(5, Math.min(85, startTop + dy));
+    drag.style.top = newTop + '%';
+    textPosY = newTop / 100;
+    document.getElementById('textPosDisplay').textContent = 'top: ' + Math.round(newTop) + '%';
+  }, {passive:false});
+  document.addEventListener('mouseup', () => { dragging=false; });
+  document.addEventListener('touchend', () => { dragging=false; });
+}
+
+function updateDragText() {
+  const t = document.getElementById('overlayText').value;
+  const d = document.getElementById('dragText');
+  if (d) d.textContent = t || 'Text...';
+}
+
+// ===== WAVEFORM =====
 async function loadMoviePhonk() {
   try {
-    const r = await fetch(B() + '/api/drive/audios');
+    const r = await fetch(B()+'/api/drive/audios');
     const d = await r.json();
     if (!d.files || !d.files.length) { toast('কোনো phonk নেই'); return; }
     document.getElementById('moviePhonkList').innerHTML = d.files.map(f => `
@@ -1082,83 +1316,136 @@ async function loadMoviePhonk() {
         <div class="file-item-name">${f.name}</div>
       </div>
     `).join('');
-  } catch(e) { toast('Error: ' + e.message); }
+  } catch(e) { toast('Error: '+e.message); }
 }
 
 function selectMoviePhonk(id, name, el) {
   selectedMoviePhonkId = id;
   document.querySelectorAll('#moviePhonkList .file-item').forEach(e => e.classList.remove('selected'));
   el.classList.add('selected');
+  drawFakeWaveform(name);
 }
 
+function drawFakeWaveform(name) {
+  const canvas = document.getElementById('waveCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth * window.devicePixelRatio || 300;
+  canvas.height = 60 * window.devicePixelRatio || 60;
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  const W = canvas.offsetWidth, H = 60;
+  ctx.clearRect(0, 0, W, H);
+
+  // Seed from name for consistent look
+  let seed = name.split('').reduce((a,c) => a + c.charCodeAt(0), 0);
+  const rng = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+
+  // Draw bars
+  const bars = 80;
+  for (let i = 0; i < bars; i++) {
+    const h = 8 + rng() * (H - 10);
+    const x = (i / bars) * W;
+    const bw = (W / bars) - 1;
+    // Color based on height (beat feel)
+    const intensity = h / H;
+    ctx.fillStyle = intensity > 0.7 ? '#ff4757' : intensity > 0.4 ? '#a29bfe' : '#636e72';
+    ctx.fillRect(x, (H - h) / 2, bw, h);
+  }
+
+  // Draw drop line
+  updateWaveDropLine();
+
+  // Click/drag to set drop point
+  canvas.onclick = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    waveDropTime = Math.round(pct * 120 * 10) / 10; // assume max 120s
+    document.getElementById('waveDropDisplay').textContent = waveDropTime.toFixed(1) + 's';
+    updateWaveDropLine();
+  };
+}
+
+function updateWaveDropLine() {
+  const canvas = document.getElementById('waveCanvas');
+  if (!canvas) return;
+  // Just re-label — full redraw would need storing bars
+  document.getElementById('waveDropDisplay').textContent = waveDropTime.toFixed(1) + 's';
+}
+
+// ===== PROCESS =====
 async function processMovieClip() {
   if (!currentMovieJobId) { toast('আগে download করুন'); return; }
-  const customStart = document.getElementById('customStart').value.trim();
-  const customEnd = document.getElementById('customEnd').value.trim();
-  if (!customStart || !customEnd) { toast('Scene বেছে নিন বা time দিন'); return; }
-
-  // Convert HH:MM:SS to seconds
-  const toSec = (t) => { const p = t.split(':').map(Number); return p[0]*3600 + p[1]*60 + p[2]; };
+  const cs = trimStartSec, ce = trimEndSec;
+  if (ce <= cs) { toast('End > Start হতে হবে'); return; }
 
   const btn = document.getElementById('movieProcessBtn');
   btn.textContent = '⏳ Processing...'; btn.disabled = true;
   document.getElementById('moviePreviewSection').style.display = 'none';
 
+  // Build text position ffmpeg string
+  const textY = 'h*' + textPosY.toFixed(2);
+
   const body = {
     movieJobId: currentMovieJobId,
-    customStart: toSec(customStart),
-    customEnd: toSec(customEnd),
+    customStart: cs,
+    customEnd: ce,
     colorPreset: currentMoviePreset,
     phonkFileId: selectedMoviePhonkId,
-    dropTime: parseFloat(document.getElementById('movieDropTime').value) || 0,
+    dropTime: waveDropTime,
     phonkVolume: parseFloat(document.getElementById('phonkVolume').value) || 1.2,
     origVolume: parseFloat(document.getElementById('origVolume').value) || 0.7,
     watermark: document.getElementById('movieWatermark').value.trim(),
+    overlayText: document.getElementById('overlayText').value.trim(),
+    overlaySize: parseInt(document.getElementById('overlaySize').value) || 18,
+    overlayColor: document.getElementById('overlayColor').value || 'white',
+    textPosY: textPosY,
+    beatSync: document.getElementById('beatSyncToggle').checked,
   };
 
   try {
-    const r = await fetch(B() + '/api/movie/process', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const r = await fetch(B()+'/api/movie/process', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
     const d = await r.json();
-    if (!d.jobId) { toast('Error: ' + (d.error || '?')); btn.textContent = '🎬 Process করো'; btn.disabled = false; return; }
+    if (!d.jobId) { toast('Error: '+(d.error||'?')); btn.textContent='🎬 Process করো'; btn.disabled=false; return; }
     currentProcJobId = d.jobId;
     const t = setInterval(async () => {
       try {
-        const r2 = await fetch(B() + '/api/job/' + d.jobId);
-        const d2 = await r2.json();
-        if (d2.log) { document.getElementById('movieLog').innerHTML = ''; d2.log.forEach(l => addMovieLog(l)); }
+        const d2 = await (await fetch(B()+'/api/job/'+d.jobId)).json();
+        if (d2.log) { document.getElementById('movieLog').innerHTML=''; d2.log.forEach(l=>addMovieLog(l)); }
         if (d2.status === 'preview') {
-          clearInterval(t);
-          btn.textContent = '🎬 Process করো'; btn.disabled = false;
-          document.getElementById('moviePreviewVideo').src = B() + d2.result.previewUrl;
+          clearInterval(t); btn.textContent='🎬 Process করো'; btn.disabled=false;
+          document.getElementById('moviePreviewVideo').src = B()+d2.result.previewUrl;
           document.getElementById('moviePreviewSection').style.display = 'block';
-          document.getElementById('moviePreviewSection').scrollIntoView({ behavior: 'smooth' });
+          document.getElementById('moviePreviewSection').scrollIntoView({behavior:'smooth'});
           toast('সম্পন্ন! Preview দেখুন 👇');
-        } else if (d2.status === 'error') {
-          clearInterval(t); btn.textContent = '🎬 Process করো'; btn.disabled = false; toast('Error!');
-        }
+        } else if (d2.status === 'error') { clearInterval(t); btn.textContent='🎬 Process করো'; btn.disabled=false; toast('Error!'); }
       } catch {}
     }, 2000);
-  } catch(e) { toast('Error: ' + e.message); btn.textContent = '🎬 Process করো'; btn.disabled = false; }
+  } catch(e) { toast('Error: '+e.message); btn.textContent='🎬 Process করো'; btn.disabled=false; }
 }
 
+// ===== UPLOAD =====
 async function uploadMovieClip() {
   if (!currentProcJobId) { toast('আগে process করুন'); return; }
   const btn = document.getElementById('movieUploadBtn');
-  btn.textContent = '⏳ Upload হচ্ছে...';
+  btn.textContent = '⏳ Upload হচ্ছে...'; btn.disabled = true;
   try {
-    const r = await fetch(B() + '/api/movie/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ procJobId: currentProcJobId, caption: document.getElementById('movieCaption').value.trim(), description: document.getElementById('movieDesc').value.trim() }) });
+    const r = await fetch(B()+'/api/movie/upload', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ procJobId: currentProcJobId, caption: document.getElementById('movieCaption').value.trim(), description: document.getElementById('movieDesc').value.trim() }) });
     const d = await r.json();
-    if (!d.jobId) { toast('Error'); btn.textContent = '📤 YouTube-এ Upload করো'; return; }
+    if (!d.jobId) { toast('Error'); btn.textContent='📤 YouTube-এ Upload করো'; btn.disabled=false; return; }
     const t = setInterval(async () => {
       try {
-        const r2 = await fetch(B() + '/api/job/' + d.jobId);
-        const d2 = await r2.json();
-        if (d2.log) d2.log.forEach(l => addMovieLog(l));
-        if (d2.status === 'done') { clearInterval(t); btn.textContent = '📤 YouTube-এ Upload করো'; toast('আপলোড সফল! 🎉'); if(d2.result?.url) addMovieLog('✓ ' + d2.result.url); document.getElementById('moviePreviewSection').style.display = 'none'; currentProcJobId = null; }
-        else if (d2.status === 'error') { clearInterval(t); btn.textContent = '📤 YouTube-এ Upload করো'; toast('Upload Error!'); }
+        const d2 = await (await fetch(B()+'/api/job/'+d.jobId)).json();
+        if (d2.log) d2.log.forEach(l=>addMovieLog(l));
+        if (d2.status === 'done') {
+          clearInterval(t); btn.textContent='📤 YouTube-এ Upload করো'; btn.disabled=false;
+          toast('আপলোড সফল! 🎉');
+          if (d2.result?.url) addMovieLog('✓ ' + d2.result.url);
+          document.getElementById('moviePreviewSection').style.display = 'none';
+          currentProcJobId = null;
+        } else if (d2.status === 'error') { clearInterval(t); btn.textContent='📤 YouTube-এ Upload করো'; btn.disabled=false; toast('Upload Error!'); }
       } catch {}
     }, 2000);
-  } catch(e) { toast('Error: ' + e.message); btn.textContent = '📤 YouTube-এ Upload করো'; }
+  } catch(e) { toast('Error: '+e.message); btn.textContent='📤 YouTube-এ Upload করো'; btn.disabled=false; }
 }
 
 window.addEventListener('DOMContentLoaded', () => {
