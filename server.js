@@ -589,8 +589,8 @@ app.post('/api/movie/process', async (req, res) => {
         const es = srtP.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
         vf += ',subtitles=\'' + es + '\':force_style=\'FontName=Impact,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Bold=1,Alignment=2,MarginV=80\'';
       }
-      if (wm) vf += ',drawtext=text=\'' + wm + '\':fontcolor=red:fontsize=13:x=(w-text_w)/2:y=h-45:bold=1:alpha=0.85';
-      if (ovText) vf += ',drawtext=text=\'' + ovText + '\':fontcolor=' + ovColor + ':fontsize=' + ovSize + ':x=(w-text_w)/2:y=h*' + tPosY.toFixed(2) + ':box=1:boxcolor=black@0.5:boxborderw=5:bold=1';
+      if (wm) vf += ',drawtext=text=\'' + wm + '\':fontcolor=red:fontsize=13:x=(w-text_w)/2:y=h-45:alpha=0.85';
+      if (ovText) vf += ',drawtext=text=\'' + ovText + '\':fontcolor=' + ovColor + ':fontsize=' + ovSize + ':x=(w-text_w)/2:y=h*' + tPosY.toFixed(2) + ':box=1:boxcolor=black@0.5:boxborderw=5';
 
       const outP = path.join(TEMP_DIR, 'mvout_' + pId + '.mp4');
 
