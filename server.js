@@ -8,6 +8,27 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 
 const app = express();
+
+// ========== COOKIES HELPER ==========
+const COOKIES_FILE = path.join(__dirname, 'yt_cookies.txt');
+
+function setupCookies() {
+  const cookieContent = process.env.YT_COOKIES;
+  if (cookieContent) {
+    try {
+      fs.writeFileSync(COOKIES_FILE, cookieContent, 'utf8');
+      console.log('[COOKIES] yt_cookies.txt written from env ✓');
+    } catch(e) { console.warn('[COOKIES] Write failed:', e.message); }
+  }
+}
+
+function ytdlpCmd(args) {
+  const cookieFlag = fs.existsSync(COOKIES_FILE) ? ' --cookies "' + COOKIES_FILE + '"' : '';
+  return 'yt-dlp' + cookieFlag + ' ' + args;
+}
+setupCookies();
+
+
 const PORT = process.env.PORT || 3000;
 const TEMP_DIR = path.join(__dirname, 'temp');
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
@@ -159,7 +180,7 @@ app.post('/api/yt/save-video', async (req, res) => {
       const tok = await getDrive(); if (!tok) throw new Error('Drive সংযুক্ত নয়');
       const cfg = loadCfg(); if (!cfg.driveFolderId) throw new Error('Drive video folder ID নেই');
       log('Video নামানো হচ্ছে...');
-      await execAsync('yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" --merge-output-format mp4 --no-playlist -o "' + tmp + '" "' + url + '"', { maxBuffer: 200*1024*1024, timeout: 600000 });
+      await execAsync(ytdlpCmd('-f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" --merge-output-format mp4 --no-playlist -o "' + tmp + '" "' + url + '"'), { maxBuffer: 200*1024*1024, timeout: 600000 });
       log('Drive-এ পাঠানো হচ্ছে...');
       const name = 'video_' + Date.now() + '.mp4';
       const r = await driveUpload(fetch, tok, name, 'video/mp4', cfg.driveFolderId, fs.readFileSync(tmp));
@@ -180,10 +201,10 @@ app.post('/api/yt/save-audio', async (req, res) => {
     try {
       const tok = await getDrive(); if (!tok) throw new Error('Drive সংযুক্ত নয়');
       const cfg = loadCfg(); if (!cfg.driveAudioFolderId) throw new Error('Drive audio folder ID নেই');
-      const { stdout: titleOut } = await execAsync('yt-dlp --get-title --no-playlist "' + url + '"', { timeout: 30000 });
+      const { stdout: titleOut } = await execAsync(ytdlpCmd('--get-title --no-playlist "' + url + '"'), { timeout: 30000 });
       const title = titleOut.trim().replace(/[<>:"/\\|?*]/g, '').substring(0, 80) || 'audio_' + Date.now();
       log('নামানো হচ্ছে: ' + title);
-      await execAsync('yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist -o "' + tmp + '.%(ext)s" "' + url + '"', { maxBuffer: 100*1024*1024, timeout: 300000 });
+      await execAsync(ytdlpCmd('-x --audio-format mp3 --audio-quality 0 --no-playlist -o "' + tmp + '.%(ext)s" "' + url + '"'), { maxBuffer: 100*1024*1024, timeout: 300000 });
       const mp3 = tmp + '.mp3'; if (!fs.existsSync(mp3)) throw new Error('MP3 তৈরি হয়নি');
       const name = title + '.mp3';
       const r = await driveUpload(fetch, tok, name, 'audio/mpeg', cfg.driveAudioFolderId, fs.readFileSync(mp3));
@@ -303,7 +324,7 @@ app.post('/api/run/realtime', async (req, res) => {
       if (!cfg.skullPath || !fs.existsSync(cfg.skullPath)) throw new Error('Skull PNG নেই');
       const vidP = path.join(TEMP_DIR, 'rtv_' + jobId + '.mp4'); tmp.push(vidP);
       log('Video নামানো হচ্ছে...');
-      await execAsync('yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" --merge-output-format mp4 --no-playlist -o "' + vidP + '" "' + ytUrl + '"', { maxBuffer: 100*1024*1024, timeout: 300000 });
+      await execAsync(ytdlpCmd('-f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" --merge-output-format mp4 --no-playlist -o "' + vidP + '" "' + ytUrl + '"'), { maxBuffer: 100*1024*1024, timeout: 300000 });
       const phP = path.join(TEMP_DIR, 'rtp_' + jobId + '.mp3'); tmp.push(phP);
       log('Phonk নামানো হচ্ছে...');
       await dlPhonk(phonkFileId, phP);
@@ -510,7 +531,7 @@ app.post('/api/movie/download', async (req, res) => {
     const out = path.join(TEMP_DIR, 'mv_' + jobId + '.mp4');
     try {
       log('নামানো হচ্ছে (720p)...');
-      await execAsync('yt-dlp -f "bestvideo[height<=720][ext=mp4]+bestaudio/best[height<=720]/best" --merge-output-format mp4 --no-playlist -o "' + out + '" "' + url + '"', { maxBuffer: 500*1024*1024, timeout: 1800000 });
+      await execAsync(ytdlpCmd('-f "bestvideo[height<=720][ext=mp4]+bestaudio/best[height<=720]/best" --merge-output-format mp4 --no-playlist -o "' + out + '" "' + url + '"'), { maxBuffer: 500*1024*1024, timeout: 1800000 });
       const { stdout } = await execAsync('ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "' + out + '"');
       const dur = parseFloat(stdout.trim());
       log('নামানো হয়েছে! ' + Math.floor(dur/60) + 'm ' + Math.floor(dur%60) + 's');
