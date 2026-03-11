@@ -406,12 +406,138 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
 
 </div>
 
+<!-- MOVIE EDIT PANEL -->
+<div class="panel" id="panel-movie">
+
+  <!-- Step 1: Download -->
+  <div class="card">
+    <div class="card-title">🎬 Step 1 — Movie Download</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:8px">যেকোনো site-এর URL দাও (m3u8, YouTube, Facebook...)</div>
+    <input class="input" id="movieUrl" placeholder="https://... বা m3u8 link" style="margin-bottom:8px">
+    <button class="btn btn-blue btn-full" id="movieDlBtn" onclick="downloadMovie()">⬇️ Download করো</button>
+    <div id="movieDlStatus" style="font-size:12px;color:var(--accent2);margin-top:8px;display:none"></div>
+  </div>
+
+  <!-- Step 2: Scene Detect -->
+  <div class="card" id="sceneCard" style="display:none">
+    <div class="card-title">🔍 Step 2 — Scene Detect</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <label class="upload-form-label" style="margin:0;white-space:nowrap">Sensitivity</label>
+      <select class="input" id="sceneThreshold" style="width:auto">
+        <option value="0.2">High (বেশি scene)</option>
+        <option value="0.35" selected>Medium</option>
+        <option value="0.5">Low (কম scene)</option>
+      </select>
+    </div>
+    <button class="btn btn-purple btn-full" onclick="detectScenes()">🔍 Scene খোঁজো</button>
+  </div>
+
+  <!-- Scene List -->
+  <div class="card" id="sceneListCard" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="card-title" style="margin:0">📋 Scene List</div>
+      <span id="sceneCount" style="font-size:11px;color:var(--text2)"></span>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Scene বেছে নাও অথবা custom time দাও</div>
+    <div id="sceneList" style="max-height:250px;overflow-y:auto"></div>
+
+    <!-- Custom time -->
+    <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">✏️ Custom Time</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div><label class="upload-form-label">Start (HH:MM:SS)</label><input class="input" id="customStart" placeholder="00:01:30" style="font-size:12px"></div>
+        <div><label class="upload-form-label">End (HH:MM:SS)</label><input class="input" id="customEnd" placeholder="00:02:00" style="font-size:12px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Edit Options -->
+  <div class="card" id="movieEditCard" style="display:none">
+    <div class="card-title">⚙️ Step 3 — Edit Options</div>
+
+    <!-- Color Grade -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">🎨 Color Grade</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;margin-bottom:6px">
+        <button class="btn btn-sm btn-blue" id="mc_believer" onclick="setMoviePreset('believer')">Believer</button>
+        <button class="btn btn-sm btn-ghost" id="mc_dark_cinema" onclick="setMoviePreset('dark_cinema')">Dark</button>
+        <button class="btn btn-sm btn-ghost" id="mc_phonk_red" onclick="setMoviePreset('phonk_red')">Phonk Red</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+        <button class="btn btn-sm btn-ghost" id="mc_cold_blue" onclick="setMoviePreset('cold_blue')">Cold Blue</button>
+        <button class="btn btn-sm btn-ghost" id="mc_original" onclick="setMoviePreset('original')">Original</button>
+      </div>
+    </div>
+
+    <div style="height:1px;background:var(--border);margin-bottom:12px"></div>
+
+    <!-- Audio Mix -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:8px">🔊 Audio Mix</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <label class="upload-form-label" style="margin:0;white-space:nowrap;width:120px">Original Volume</label>
+        <input class="input" id="origVolume" type="number" value="0.7" step="0.1" min="0" max="1" style="width:70px;font-size:12px">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <label class="upload-form-label" style="margin:0;white-space:nowrap;width:120px">Phonk Volume</label>
+        <input class="input" id="phonkVolume" type="number" value="1.2" step="0.1" min="0" max="2" style="width:70px;font-size:12px">
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div class="card-title" style="margin:0;font-size:11px">🎵 Phonk (Drive)</div>
+        <button class="btn btn-sm btn-blue" onclick="loadMoviePhonk()">লোড</button>
+      </div>
+      <div id="moviePhonkList" style="max-height:120px;overflow-y:auto;margin-bottom:6px"><div style="font-size:12px;color:var(--text2)">লোড করুন</div></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label class="upload-form-label" style="margin:0;white-space:nowrap">Drop Time (s)</label>
+        <input class="input" id="movieDropTime" type="number" value="0" step="0.5" min="0" style="width:80px;font-size:12px">
+      </div>
+    </div>
+
+    <div style="height:1px;background:var(--border);margin-bottom:12px"></div>
+
+    <!-- Watermark -->
+    <div>
+      <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px">💧 Watermark</div>
+      <input class="input" id="movieWatermark" placeholder="your channel name" value="op edits">
+    </div>
+  </div>
+
+  <!-- Caption -->
+  <div class="card" id="movieCaptionCard" style="display:none">
+    <div class="card-title">📝 Caption</div>
+    <input class="input" id="movieCaption" placeholder='"Scene Title 🤯🔥" | Movie Name' style="margin-bottom:8px">
+    <textarea class="input" id="movieDesc" rows="2" style="resize:none">#shorts #viral #movieedit #cinematic</textarea>
+  </div>
+
+  <!-- Process Button -->
+  <button class="btn btn-red btn-full" id="movieProcessBtn" onclick="processMovieClip()" style="display:none;margin-bottom:10px">🎬 Process করো</button>
+
+  <!-- Movie Log -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div class="card-title" style="margin:0">📊 লগ</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('movieLog').innerHTML=''">ক্লিয়ার</button>
+    </div>
+    <div class="log-box" id="movieLog">লগ এখানে দেখাবে...</div>
+  </div>
+
+  <!-- Movie Preview + Upload -->
+  <div id="moviePreviewSection" style="display:none">
+    <div class="card">
+      <div class="card-title">👁 Preview</div>
+      <video id="moviePreviewVideo" controls style="width:100%;border-radius:8px;background:#000;max-height:400px"></video>
+    </div>
+    <button class="btn btn-green btn-full" onclick="uploadMovieClip()" id="movieUploadBtn" style="margin-bottom:10px">📤 YouTube-এ Upload করো</button>
+  </div>
+
+</div>
+
 <!-- BOTTOM NAV -->
 <div class="bottom-nav">
   <div class="nav-item active" onclick="switchTab('connect',this)"><span class="icon">🔗</span>Connect</div>
   <div class="nav-item" onclick="switchTab('dl',this)"><span class="icon">⬇️</span>ডাউনলোড</div>
   <div class="nav-item" onclick="switchTab('edit',this)"><span class="icon">💀</span>Edit</div>
-  <div class="nav-item" onclick="switchTab('sched',this)"><span class="icon">⏰</span>শিডিউল</div>
+  <div class="nav-item" onclick="switchTab('movie',this)"><span class="icon">🎬</span>Movie</div>
   <div class="nav-item" onclick="switchTab('run',this)"><span class="icon">🔥</span>চালাও</div>
 </div>
 
@@ -845,11 +971,200 @@ async function loadSavedConfig() {
   } catch(e) {}
 }
 
+// ========== MOVIE EDIT ==========
+let currentMovieJobId = null;
+let currentMoviePreset = 'believer';
+let currentProcJobId = null;
+let selectedMoviePhonkId = null;
+
+function setMoviePreset(p) {
+  currentMoviePreset = p;
+  ['believer','dark_cinema','phonk_red','cold_blue','original'].forEach(k => {
+    const el = document.getElementById('mc_' + k);
+    if (el) el.className = 'btn btn-sm ' + (k === p ? 'btn-blue' : 'btn-ghost');
+  });
+}
+
+function addMovieLog(msg) {
+  const box = document.getElementById('movieLog');
+  if (box.textContent === 'লগ এখানে দেখাবে...') box.innerHTML = '';
+  const line = document.createElement('div');
+  line.className = 'log-line' + (msg.includes('Error') ? ' err' : msg.includes('সম্পন্ন') || msg.includes('সফল') || msg.includes('✓') ? ' ok' : '');
+  line.textContent = msg;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function downloadMovie() {
+  const url = document.getElementById('movieUrl').value.trim();
+  if (!url) { toast('URL দিন'); return; }
+  const btn = document.getElementById('movieDlBtn');
+  btn.textContent = '⏳ নামানো হচ্ছে...'; btn.disabled = true;
+  document.getElementById('movieLog').innerHTML = '';
+  try {
+    const r = await fetch(B() + '/api/movie/download', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+    const d = await r.json();
+    if (!d.jobId) { toast('Error: ' + (d.error || '?')); btn.textContent = '⬇️ Download করো'; btn.disabled = false; return; }
+    currentMovieJobId = d.jobId;
+    const t = setInterval(async () => {
+      try {
+        const r2 = await fetch(B() + '/api/job/' + d.jobId);
+        const d2 = await r2.json();
+        if (d2.log) { document.getElementById('movieLog').innerHTML = ''; d2.log.forEach(l => addMovieLog(l)); }
+        if (d2.status === 'done') {
+          clearInterval(t);
+          btn.textContent = '⬇️ Download করো'; btn.disabled = false;
+          document.getElementById('sceneCard').style.display = 'block';
+          document.getElementById('movieEditCard').style.display = 'block';
+          document.getElementById('movieCaptionCard').style.display = 'block';
+          document.getElementById('movieProcessBtn').style.display = 'block';
+          toast('Download সম্পন্ন! Scene detect করুন');
+        } else if (d2.status === 'error') {
+          clearInterval(t); btn.textContent = '⬇️ Download করো'; btn.disabled = false; toast('Error!');
+        }
+      } catch {}
+    }, 3000);
+  } catch(e) { toast('Error: ' + e.message); btn.textContent = '⬇️ Download করো'; btn.disabled = false; }
+}
+
+async function detectScenes() {
+  if (!currentMovieJobId) { toast('আগে download করুন'); return; }
+  const threshold = document.getElementById('sceneThreshold').value;
+  try {
+    const r = await fetch(B() + '/api/movie/scenes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: currentMovieJobId, threshold }) });
+    const d = await r.json();
+    if (!d.jobId) { toast('Error'); return; }
+    toast('Scene খোঁজা হচ্ছে...');
+    const t = setInterval(async () => {
+      try {
+        const r2 = await fetch(B() + '/api/job/' + d.jobId);
+        const d2 = await r2.json();
+        if (d2.log) d2.log.forEach(l => addMovieLog(l));
+        if (d2.status === 'done') {
+          clearInterval(t);
+          renderSceneList(d2.result.scenes);
+          document.getElementById('sceneListCard').style.display = 'block';
+          toast(d2.result.scenes.length + ' টি scene পাওয়া গেছে');
+        } else if (d2.status === 'error') { clearInterval(t); toast('Error!'); }
+      } catch {}
+    }, 2000);
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+function renderSceneList(scenes) {
+  document.getElementById('sceneCount').textContent = scenes.length + ' টি';
+  document.getElementById('sceneList').innerHTML = scenes.map(s => `
+    <div class="file-item" onclick="selectScene(${s.start}, ${s.end}, '${s.startFmt}', '${s.endFmt}', this)" style="flex-direction:column;align-items:flex-start;gap:3px">
+      <div style="display:flex;justify-content:space-between;width:100%">
+        <span style="font-size:12px;font-weight:700">Scene ${s.index}</span>
+        <span style="font-size:11px;color:var(--accent2)">${s.duration.toFixed(1)}s</span>
+      </div>
+      <div style="font-size:11px;color:var(--text2)">${s.startFmt} → ${s.endFmt}</div>
+    </div>
+  `).join('');
+}
+
+function selectScene(start, end, startFmt, endFmt, el) {
+  document.querySelectorAll('#sceneList .file-item').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('customStart').value = startFmt;
+  document.getElementById('customEnd').value = endFmt;
+}
+
+async function loadMoviePhonk() {
+  try {
+    const r = await fetch(B() + '/api/drive/audios');
+    const d = await r.json();
+    if (!d.files || !d.files.length) { toast('কোনো phonk নেই'); return; }
+    document.getElementById('moviePhonkList').innerHTML = d.files.map(f => `
+      <div class="file-item" onclick="selectMoviePhonk('${f.id}','${f.name.replace(/'/g,"\\'")}',this)">
+        <div style="font-size:14px">🎵</div>
+        <div class="file-item-name">${f.name}</div>
+      </div>
+    `).join('');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+function selectMoviePhonk(id, name, el) {
+  selectedMoviePhonkId = id;
+  document.querySelectorAll('#moviePhonkList .file-item').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+async function processMovieClip() {
+  if (!currentMovieJobId) { toast('আগে download করুন'); return; }
+  const customStart = document.getElementById('customStart').value.trim();
+  const customEnd = document.getElementById('customEnd').value.trim();
+  if (!customStart || !customEnd) { toast('Scene বেছে নিন বা time দিন'); return; }
+
+  // Convert HH:MM:SS to seconds
+  const toSec = (t) => { const p = t.split(':').map(Number); return p[0]*3600 + p[1]*60 + p[2]; };
+
+  const btn = document.getElementById('movieProcessBtn');
+  btn.textContent = '⏳ Processing...'; btn.disabled = true;
+  document.getElementById('moviePreviewSection').style.display = 'none';
+
+  const body = {
+    movieJobId: currentMovieJobId,
+    customStart: toSec(customStart),
+    customEnd: toSec(customEnd),
+    colorPreset: currentMoviePreset,
+    phonkFileId: selectedMoviePhonkId,
+    dropTime: parseFloat(document.getElementById('movieDropTime').value) || 0,
+    phonkVolume: parseFloat(document.getElementById('phonkVolume').value) || 1.2,
+    origVolume: parseFloat(document.getElementById('origVolume').value) || 0.7,
+    watermark: document.getElementById('movieWatermark').value.trim(),
+  };
+
+  try {
+    const r = await fetch(B() + '/api/movie/process', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.jobId) { toast('Error: ' + (d.error || '?')); btn.textContent = '🎬 Process করো'; btn.disabled = false; return; }
+    currentProcJobId = d.jobId;
+    const t = setInterval(async () => {
+      try {
+        const r2 = await fetch(B() + '/api/job/' + d.jobId);
+        const d2 = await r2.json();
+        if (d2.log) { document.getElementById('movieLog').innerHTML = ''; d2.log.forEach(l => addMovieLog(l)); }
+        if (d2.status === 'preview') {
+          clearInterval(t);
+          btn.textContent = '🎬 Process করো'; btn.disabled = false;
+          document.getElementById('moviePreviewVideo').src = B() + d2.result.previewUrl;
+          document.getElementById('moviePreviewSection').style.display = 'block';
+          document.getElementById('moviePreviewSection').scrollIntoView({ behavior: 'smooth' });
+          toast('সম্পন্ন! Preview দেখুন 👇');
+        } else if (d2.status === 'error') {
+          clearInterval(t); btn.textContent = '🎬 Process করো'; btn.disabled = false; toast('Error!');
+        }
+      } catch {}
+    }, 2000);
+  } catch(e) { toast('Error: ' + e.message); btn.textContent = '🎬 Process করো'; btn.disabled = false; }
+}
+
+async function uploadMovieClip() {
+  if (!currentProcJobId) { toast('আগে process করুন'); return; }
+  const btn = document.getElementById('movieUploadBtn');
+  btn.textContent = '⏳ Upload হচ্ছে...';
+  try {
+    const r = await fetch(B() + '/api/movie/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ procJobId: currentProcJobId, caption: document.getElementById('movieCaption').value.trim(), description: document.getElementById('movieDesc').value.trim() }) });
+    const d = await r.json();
+    if (!d.jobId) { toast('Error'); btn.textContent = '📤 YouTube-এ Upload করো'; return; }
+    const t = setInterval(async () => {
+      try {
+        const r2 = await fetch(B() + '/api/job/' + d.jobId);
+        const d2 = await r2.json();
+        if (d2.log) d2.log.forEach(l => addMovieLog(l));
+        if (d2.status === 'done') { clearInterval(t); btn.textContent = '📤 YouTube-এ Upload করো'; toast('আপলোড সফল! 🎉'); if(d2.result?.url) addMovieLog('✓ ' + d2.result.url); document.getElementById('moviePreviewSection').style.display = 'none'; currentProcJobId = null; }
+        else if (d2.status === 'error') { clearInterval(t); btn.textContent = '📤 YouTube-এ Upload করো'; toast('Upload Error!'); }
+      } catch {}
+    }, 2000);
+  } catch(e) { toast('Error: ' + e.message); btn.textContent = '📤 YouTube-এ Upload করো'; }
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   checkAuth();
   loadSavedConfig();
   setInterval(checkAuth, 30000);
-  // Day btn click
   document.querySelectorAll('#dayBtns .dbtn').forEach(b => { b.onclick = () => b.classList.toggle('on'); });
 });
 </script>
