@@ -1,1 +1,726 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Troll Edit Pro</title>
+<style>
+:root{--bg:#0a0a0f;--surface:#12121a;--surface2:#1a1a26;--surface3:#22223a;--border:#2a2a40;--text:#e8e8f0;--text2:#8888aa;--accent:#7c3aed;--accent2:#06d6a0;--red:#ff4757;--blue:#3b82f6;--gold:#f5c842}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif;max-width:480px;margin:0 auto;min-height:100vh;padding-bottom:80px}
+.header{background:var(--surface);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;border-bottom:1px solid var(--border)}
+.header-title{font-size:16px;font-weight:700}
+.header-sub{font-size:11px;color:var(--text2);margin-top:2px}
+.status-dot{width:8px;height:8px;border-radius:50%;background:#444;display:inline-block;margin-right:4px}
+.status-dot.ok{background:var(--accent2)}
+.panel{display:none;padding:12px 12px 0}
+.panel.active{display:block}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px}
+.card-title{font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px}
+.input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:13px;outline:none}
+.input:focus{border-color:var(--accent)}
+.btn{border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .2s}
+.btn:active{opacity:.8}
+.btn-full{width:100%}
+.btn-sm{padding:7px 12px;font-size:12px}
+.btn-green{background:var(--accent2);color:#000}
+.btn-red{background:var(--red);color:#fff}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-purple{background:var(--accent);color:#fff}
+.btn-ghost{background:var(--surface3);color:var(--text)}
+.connect-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:12px}
+.connect-icon{font-size:28px}
+.connect-info{flex:1}
+.connect-title{font-size:14px;font-weight:600}
+.connect-sub{font-size:11px;color:var(--text2);margin-top:2px}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);display:flex;z-index:100;max-width:480px;margin:0 auto}
+.nav-item{flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 4px;cursor:pointer;color:var(--text2);font-size:10px;gap:2px}
+.nav-item.active{color:var(--accent)}
+.nav-item .icon{font-size:20px}
+.toggle{width:44px;height:26px;border-radius:13px;background:var(--surface3);border:none;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
+.toggle::after{content:'';position:absolute;width:20px;height:20px;border-radius:50%;background:#fff;top:3px;left:3px;transition:left .2s}
+.toggle.on{background:var(--accent2)}
+.toggle.on::after{left:21px}
+.setting-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)}
+.setting-row:last-child{border-bottom:none}
+.setting-label{font-size:13px;font-weight:600}
+.setting-sub{font-size:11px;color:var(--text2);margin-top:2px}
+.dbtn{background:var(--surface3);color:var(--text2);border-radius:6px;font-size:10px;padding:6px 2px;text-align:center;cursor:pointer;font-weight:600;border:1px solid var(--border);transition:all .2s}
+.dbtn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.upload-form-label{font-size:11px;color:var(--text2);display:block;margin-bottom:4px}
+.file-item{background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px;display:flex;align-items:center;gap:8px;border:1px solid var(--border);cursor:pointer}
+.file-item.selected{border-color:var(--accent);background:var(--surface3)}
+.file-item-name{font-size:12px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-item-size{font-size:10px;color:var(--text2)}
+.phonk-item{background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:6px;display:flex;align-items:center;gap:8px;border:1px solid var(--border)}
+.log-box{background:var(--surface2);border-radius:8px;padding:10px;height:200px;overflow-y:auto;font-size:11px;color:var(--text2);font-family:monospace;line-height:1.6}
+.log-line{padding:1px 0}
+.log-line.ok{color:var(--accent2)}
+.log-line.err{color:var(--red)}
+.toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:9999;max-width:80%;text-align:center;pointer-events:none}
+</style>
+</head>
+<body>
 
+<!-- HEADER -->
+<div class="header">
+  <div>
+    <div class="header-title">💀 Troll Edit Pro</div>
+    <div class="header-sub" id="headerStatus"><span class="status-dot" id="statusDot"></span>সংযুক্ত নয়</div>
+  </div>
+  <div style="font-size:20px">🔥</div>
+</div>
+
+<!-- PANEL: CONNECT -->
+<div class="panel active" id="panel-connect">
+
+  <div class="card">
+    <div class="card-title">🔑 OAuth Credentials</div>
+    <div style="margin-bottom:8px">
+      <label class="upload-form-label">Client ID</label>
+      <input class="input" id="clientId" placeholder="xxx.apps.googleusercontent.com">
+    </div>
+    <div style="margin-bottom:8px">
+      <label class="upload-form-label">Client Secret</label>
+      <input class="input" id="clientSecret" placeholder="GOCSPX-...">
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="saveOAuth()">💾 সেভ</button>
+  </div>
+
+  <div class="connect-card">
+    <div class="connect-icon">▶️</div>
+    <div class="connect-info">
+      <div class="connect-title">YouTube</div>
+      <div class="connect-sub" id="ytStatus">সংযুক্ত নয়</div>
+    </div>
+    <button class="btn btn-sm btn-red" id="ytBtn" onclick="connectYT()">Connect</button>
+  </div>
+
+  <div class="connect-card">
+    <div class="connect-icon">📁</div>
+    <div class="connect-info">
+      <div class="connect-title">Google Drive</div>
+      <div class="connect-sub" id="driveStatus">সংযুক্ত নয়</div>
+    </div>
+    <button class="btn btn-sm btn-blue" id="driveBtn" onclick="connectDrive()">Connect</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📁 Drive ফোল্ডার</div>
+    <div style="margin-bottom:8px">
+      <label class="upload-form-label">Video ফোল্ডার ID</label>
+      <input class="input" id="videoFolderId" placeholder="Drive ফোল্ডার ID">
+    </div>
+    <div style="margin-bottom:8px">
+      <label class="upload-form-label">Phonk Audio ফোল্ডার ID</label>
+      <input class="input" id="audioFolderId" placeholder="Drive ফোল্ডার ID">
+    </div>
+    <button class="btn btn-green btn-sm" onclick="saveFolders()">💾 সেভ</button>
+  </div>
+
+</div>
+
+<!-- PANEL: EDIT SETTINGS -->
+<div class="panel" id="panel-edit">
+
+  <!-- Skull -->
+  <div class="card">
+    <div class="card-title">💀 Skull PNG</div>
+    <div id="skullStatus" style="font-size:12px;color:var(--accent2);margin-bottom:8px;font-weight:600">কোনো skull নেই</div>
+    <input type="file" id="skullFile" accept="image/png" style="display:none" onchange="uploadSkull()">
+    <button class="btn btn-purple btn-sm" onclick="document.getElementById('skullFile').click()">PNG আপলোড করুন</button>
+  </div>
+
+  <!-- Freeze -->
+  <div class="card">
+    <div class="card-title">⏸ Freeze সময়</div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <label class="upload-form-label" style="margin:0;white-space:nowrap">শেষের কত সেকেন্ড freeze হবে</label>
+      <input class="input" id="freezeSec" type="number" value="3" min="1" max="10" style="width:70px">
+    </div>
+  </div>
+
+  <!-- Text Overlay -->
+  <div class="card">
+    <div class="card-title">✍️ Text Overlay</div>
+    <div class="setting-row" style="margin-bottom:10px">
+      <div><div class="setting-label">Text চালু করো</div></div>
+      <button class="toggle" id="textToggle" onclick="this.classList.toggle('on')"></button>
+    </div>
+    <input class="input" id="textOverlay" placeholder="Wait for the end..." style="margin-bottom:8px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <label class="upload-form-label" style="margin:0;white-space:nowrap">কত সেকেন্ড দেখাবে</label>
+      <input class="input" id="textTime" type="number" value="2" min="1" max="10" style="width:70px">
+    </div>
+  </div>
+
+  <!-- Phonk List -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="card-title" style="margin:0">🎵 Phonk List</div>
+      <button class="btn btn-sm btn-blue" onclick="loadAudios()">Drive থেকে লোড</button>
+    </div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:8px">প্রতিটার Drop Time (সেকেন্ড) সেট করুন</div>
+    <div id="phonkList"></div>
+  </div>
+
+  <button class="btn btn-green btn-full" onclick="saveEditSettings()" style="margin-bottom:10px">💾 সেভ</button>
+
+</div>
+
+<!-- PANEL: SCHEDULE -->
+<div class="panel" id="panel-sched">
+
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:15px;font-weight:700">⏰ অটো শিডিউলার</div>
+      <button class="toggle" id="schedToggle" onclick="this.classList.toggle('on');saveSched()"></button>
+    </div>
+    <div style="margin-bottom:10px">
+      <label class="upload-form-label">সময় (Bangladesh)</label>
+      <input class="input" id="schedTime" type="time" value="08:00">
+    </div>
+    <div style="margin-bottom:12px">
+      <label class="upload-form-label">সাপ্তাহিক দিন</label>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:6px" id="dayBtns">
+        <div class="dbtn" data-d="Saturday">শনি</div>
+        <div class="dbtn" data-d="Sunday">রবি</div>
+        <div class="dbtn" data-d="Monday">সোম</div>
+        <div class="dbtn" data-d="Tuesday">মঙ্গল</div>
+        <div class="dbtn" data-d="Wednesday">বুধ</div>
+        <div class="dbtn" data-d="Thursday">বৃহ</div>
+        <div class="dbtn" data-d="Friday">শুক্র</div>
+      </div>
+    </div>
+    <button class="btn btn-green btn-full" onclick="saveSched()">💾 সেভ</button>
+  </div>
+
+  <!-- Video List -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="card-title" style="margin:0">🎬 Drive ভিডিও</div>
+      <button class="btn btn-sm btn-blue" onclick="loadVideos()">লোড</button>
+    </div>
+    <div id="videoList"></div>
+  </div>
+
+</div>
+
+<!-- PANEL: DOWNLOAD -->
+<div class="panel" id="panel-dl">
+
+  <!-- YT Video → Drive -->
+  <div class="card">
+    <div class="card-title">🎬 YT Video → Drive</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Video নামিয়ে Drive video folder-এ save হবে</div>
+    <input class="input" id="dlVideoUrl" placeholder="YouTube URL" style="margin-bottom:8px">
+    <button class="btn btn-blue btn-full" onclick="saveVideoToDrive()">Drive-এ Save করো</button>
+  </div>
+
+  <!-- YT Audio → Drive -->
+  <div class="card">
+    <div class="card-title">🎵 YT Audio (Phonk) → Drive</div>
+    <div style="font-size:11px;color:var(--text2);margin-bottom:8px">Audio extract করে Drive audio folder-এ save হবে</div>
+    <input class="input" id="dlAudioUrl" placeholder="YouTube URL" style="margin-bottom:8px">
+    <button class="btn btn-purple btn-full" onclick="saveAudioToDrive()">Drive-এ Save করো</button>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div class="card-title" style="margin:0">📊 লগ</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('dlLog').innerHTML=''">ক্লিয়ার</button>
+    </div>
+    <div class="log-box" id="dlLog">লগ এখানে দেখাবে...</div>
+  </div>
+
+</div>
+
+<!-- PANEL: RUN -->
+<div class="panel" id="panel-run">
+
+  <!-- Mode toggle -->
+  <div class="card" style="padding:8px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <button class="btn btn-blue btn-sm" id="modeRtBtn" onclick="setMode('realtime')">⚡ Real-time</button>
+      <button class="btn btn-ghost btn-sm" id="modeDrBtn" onclick="setMode('drive')">📁 Drive</button>
+    </div>
+  </div>
+
+  <!-- Real-time mode -->
+  <div id="rtSection">
+    <div class="card">
+      <div class="card-title">⚡ Real-time Edit</div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:10px">YT link → edit → সরাসরি upload</div>
+      <label class="upload-form-label">YouTube Video URL</label>
+      <input class="input" id="rtVideoUrl" placeholder="https://youtube.com/..." style="margin-bottom:8px">
+    </div>
+
+    <!-- Phonk picker for realtime -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="card-title" style="margin:0">🎵 Phonk বেছে নাও</div>
+        <button class="btn btn-sm btn-blue" onclick="loadPhonkForRun()">Drive লোড</button>
+      </div>
+      <div id="rtPhonkList"><div style="font-size:12px;color:var(--text2)">Drive থেকে লোড করুন</div></div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:10px">
+        <label class="upload-form-label" style="margin:0;white-space:nowrap">Drop Time (সেকেন্ড)</label>
+        <input class="input" id="rtDropTime" type="number" value="0" min="0" step="0.5" style="width:80px">
+      </div>
+    </div>
+
+    <!-- Edit options -->
+    <div class="card">
+      <div class="card-title">⚙️ Edit Options</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <label class="upload-form-label" style="margin:0;white-space:nowrap">Freeze (সেকেন্ড)</label>
+        <input class="input" id="rtFreeze" type="number" value="3" min="1" max="10" style="width:70px">
+      </div>
+      <div style="margin-bottom:8px">
+        <label class="upload-form-label">Text Overlay (ফাঁকা = বন্ধ)</label>
+        <input class="input" id="rtText" placeholder="Wait for the end...">
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <label class="upload-form-label" style="margin:0;white-space:nowrap">Text Time (সেকেন্ড)</label>
+        <input class="input" id="rtTextTime" type="number" value="2" min="1" max="10" style="width:70px">
+      </div>
+    </div>
+
+    <button class="btn btn-red btn-full" onclick="runRealtime()" style="margin-bottom:10px">🔥 Edit + Upload করো</button>
+  </div>
+
+  <!-- Drive mode -->
+  <div id="drSection" style="display:none">
+    <div class="card">
+      <div class="card-title">📁 Drive থেকে Video</div>
+      <div style="margin-bottom:8px">
+        <label class="upload-form-label">Video File ID</label>
+        <input class="input" id="drVideoId" placeholder="Drive file ID">
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div class="card-title" style="margin:0;font-size:11px">অথবা নিচ থেকে বেছে নিন</div>
+        <button class="btn btn-sm btn-blue" onclick="loadVideosForRun()">লোড</button>
+      </div>
+      <div id="runVideoList"></div>
+    </div>
+
+    <!-- Phonk picker for drive mode -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="card-title" style="margin:0">🎵 Phonk বেছে নাও</div>
+        <button class="btn btn-sm btn-blue" onclick="loadPhonkForRun()">Drive লোড</button>
+      </div>
+      <div id="drPhonkList"><div style="font-size:12px;color:var(--text2)">Drive থেকে লোড করুন</div></div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:10px">
+        <label class="upload-form-label" style="margin:0;white-space:nowrap">Drop Time (সেকেন্ড)</label>
+        <input class="input" id="drDropTime" type="number" value="0" min="0" step="0.5" style="width:80px">
+      </div>
+    </div>
+
+    <button class="btn btn-red btn-full" onclick="runNow()" style="margin-bottom:10px">🔥 Edit + Upload করো</button>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <div class="card-title" style="margin:0">📊 লগ</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('logBox').innerHTML=''">ক্লিয়ার</button>
+    </div>
+    <div class="log-box" id="logBox">লগ এখানে দেখাবে...</div>
+  </div>
+
+</div>
+
+<!-- BOTTOM NAV -->
+<div class="bottom-nav">
+  <div class="nav-item active" onclick="switchTab('connect',this)"><span class="icon">🔗</span>Connect</div>
+  <div class="nav-item" onclick="switchTab('dl',this)"><span class="icon">⬇️</span>ডাউনলোড</div>
+  <div class="nav-item" onclick="switchTab('edit',this)"><span class="icon">💀</span>Edit</div>
+  <div class="nav-item" onclick="switchTab('sched',this)"><span class="icon">⏰</span>শিডিউল</div>
+  <div class="nav-item" onclick="switchTab('run',this)"><span class="icon">🔥</span>চালাও</div>
+</div>
+
+<script>
+const DEFAULT_BACKEND = 'https://web-production-59810.up.railway.app';
+const B = () => localStorage.getItem('tep_backend') || DEFAULT_BACKEND;
+const setB = (v) => localStorage.setItem('tep_backend', v.replace(/\/$/, ''));
+let phonkData = [];
+
+function switchTab(id, el) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  if (el) el.classList.add('active');
+}
+
+function toast(msg, dur=2500) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), dur);
+}
+
+function addLog(msg) {
+  const box = document.getElementById('logBox');
+  const line = document.createElement('div');
+  line.className = 'log-line' + (msg.includes('Error') || msg.includes('error') ? ' err' : msg.includes('সফল') || msg.includes('✓') ? ' ok' : '');
+  line.textContent = msg;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ========== AUTH ==========
+async function checkAuth() {
+  try {
+    const r = await fetch(B() + '/api/auth/status');
+    const d = await r.json();
+    document.getElementById('ytStatus').textContent = d.youtube ? 'সংযুক্ত' : 'সংযুক্ত নয়';
+    document.getElementById('driveStatus').textContent = d.drive ? 'সংযুক্ত' : 'সংযুক্ত নয়';
+    document.getElementById('ytBtn').textContent = d.youtube ? 'Reconnect' : 'Connect';
+    document.getElementById('ytBtn').className = d.youtube ? 'btn btn-sm btn-ghost' : 'btn btn-sm btn-red';
+    document.getElementById('driveBtn').textContent = d.drive ? 'Reconnect' : 'Connect';
+    document.getElementById('driveBtn').className = d.drive ? 'btn btn-sm btn-ghost' : 'btn btn-sm btn-blue';
+    const dot = document.getElementById('statusDot');
+    const status = document.getElementById('headerStatus');
+    if (d.youtube && d.drive) { dot.classList.add('ok'); status.innerHTML = '<span class="status-dot ok"></span>সংযুক্ত'; }
+    else { dot.classList.remove('ok'); status.innerHTML = '<span class="status-dot"></span>সংযুক্ত নয়'; }
+  } catch(e) {}
+}
+
+function connectYT() {
+  const win = window.open(B() + '/auth/youtube', '_blank', 'width=500,height=600');
+  const t = setInterval(async () => {
+    try {
+      const r = await fetch(B() + '/api/auth/status');
+      const d = await r.json();
+      if (d.youtube) { clearInterval(t); win && win.close(); checkAuth(); toast('YouTube সংযুক্ত!'); }
+    } catch {}
+  }, 2000);
+  setTimeout(() => clearInterval(t), 120000);
+}
+
+function connectDrive() {
+  const win = window.open(B() + '/auth/drive', '_blank', 'width=500,height=600');
+  const t = setInterval(async () => {
+    try {
+      const r = await fetch(B() + '/api/auth/status');
+      const d = await r.json();
+      if (d.drive) { clearInterval(t); win && win.close(); checkAuth(); toast('Drive সংযুক্ত!'); }
+    } catch {}
+  }, 2000);
+  setTimeout(() => clearInterval(t), 120000);
+}
+
+async function saveOAuth() {
+  const clientId = document.getElementById('clientId').value.trim();
+  const clientSecret = document.getElementById('clientSecret').value.trim();
+  await fetch(B() + '/api/config/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId, clientSecret }) });
+  toast('OAuth সেভ হয়েছে');
+}
+
+async function saveFolders() {
+  const videoFolderId = document.getElementById('videoFolderId').value.trim();
+  const driveAudioFolderId = document.getElementById('audioFolderId').value.trim();
+  await fetch(B() + '/api/config/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ driveFolderId: videoFolderId, driveAudioFolderId }) });
+  toast('ফোল্ডার সেভ হয়েছে');
+}
+
+// ========== SKULL ==========
+async function uploadSkull() {
+  const file = document.getElementById('skullFile').files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('skull', file);
+  try {
+    const r = await fetch(B() + '/api/skull/upload', { method: 'POST', body: form });
+    const d = await r.json();
+    if (d.ok) { document.getElementById('skullStatus').textContent = 'Skull আপলোড করা আছে ✓'; toast('Skull আপলোড হয়েছে'); }
+    else toast('Error: ' + d.error);
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+// ========== PHONK ==========
+async function loadAudios() {
+  try {
+    const r = await fetch(B() + '/api/drive/audios');
+    const d = await r.json();
+    if (!d.files || !d.files.length) { toast('কোনো audio পাওয়া যায়নি'); return; }
+    const existing = phonkData.map(p => p.name);
+    let added = 0;
+    for (const f of d.files) {
+      if (!existing.includes(f.name)) { phonkData.push({ name: f.name, dropTime: 0 }); added++; }
+    }
+    renderPhonkList();
+    toast(`${added} টি audio যোগ হয়েছে`);
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+function renderPhonkList() {
+  const el = document.getElementById('phonkList');
+  if (!phonkData.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text2)">কোনো phonk নেই — Drive থেকে লোড করুন</div>'; return; }
+  el.innerHTML = phonkData.map((p, i) => `
+    <div class="phonk-item">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div>
+        <div style="font-size:11px;color:var(--text2)">Drop: ${p.dropTime}s</div>
+      </div>
+      <input type="number" value="${p.dropTime}" step="0.5" min="0"
+        style="width:65px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;font-size:12px"
+        onchange="phonkData[${i}].dropTime=parseFloat(this.value)||0">
+      <button onclick="phonkData.splice(${i},1);renderPhonkList()"
+        style="background:var(--red);border:none;color:white;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:11px">X</button>
+    </div>
+  `).join('');
+}
+
+async function saveEditSettings() {
+  const freezeSec = parseFloat(document.getElementById('freezeSec').value) || 3;
+  const textOn = document.getElementById('textToggle').classList.contains('on');
+  const textOverlay = textOn ? document.getElementById('textOverlay').value.trim() : '';
+  const textTime = parseFloat(document.getElementById('textTime').value) || 2;
+  await fetch(B() + '/api/config/save', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ freezeSec, textOverlay, textTime, phonkList: phonkData })
+  });
+  toast('সেভ হয়েছে');
+}
+
+// ========== VIDEOS ==========
+async function loadVideos() {
+  try {
+    const r = await fetch(B() + '/api/drive/videos');
+    const d = await r.json();
+    const el = document.getElementById('videoList');
+    if (!d.files || !d.files.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text2)">কোনো video নেই</div>'; return; }
+    el.innerHTML = d.files.map(f => `
+      <div class="file-item">
+        <div style="font-size:16px">🎬</div>
+        <div class="file-item-name">${f.name}</div>
+        <div class="file-item-size">${f.size ? (f.size/1024/1024).toFixed(1)+'MB' : ''}</div>
+      </div>
+    `).join('');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function loadVideosForRun() {
+  try {
+    const r = await fetch(B() + '/api/drive/videos');
+    const d = await r.json();
+    const el = document.getElementById('runVideoList');
+    if (!d.files || !d.files.length) { el.innerHTML = '<div style="font-size:12px;color:var(--text2)">কোনো video নেই</div>'; return; }
+    el.innerHTML = d.files.map(f => `
+      <div class="file-item" onclick="selectVideo('${f.id}','${f.name}',this)">
+        <div style="font-size:16px">🎬</div>
+        <div class="file-item-name">${f.name}</div>
+        <div class="file-item-size">${f.size ? (f.size/1024/1024).toFixed(1)+'MB' : ''}</div>
+      </div>
+    `).join('');
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+function selectVideo(id, name, el) {
+  document.querySelectorAll('#runVideoList .file-item').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('manualVideoId').value = id;
+}
+
+// ========== SCHEDULE ==========
+async function saveSched() {
+  const days = [...document.querySelectorAll('#dayBtns .dbtn.on')].map(b => b.dataset.d);
+  const scheduleTime = document.getElementById('schedTime').value;
+  const enabled = document.getElementById('schedToggle').classList.contains('on');
+  await fetch(B() + '/api/config/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scheduleDays: days, scheduleTime, enabled }) });
+  toast(enabled ? 'শিডিউল চালু' : 'শিডিউল বন্ধ');
+}
+
+// ========== MODE ==========
+let selectedPhonkId = null;
+let selectedPhonkName = null;
+
+function setMode(mode) {
+  document.getElementById('rtSection').style.display = mode === 'realtime' ? 'block' : 'none';
+  document.getElementById('drSection').style.display = mode === 'drive' ? 'block' : 'none';
+  document.getElementById('modeRtBtn').className = mode === 'realtime' ? 'btn btn-blue btn-sm' : 'btn btn-ghost btn-sm';
+  document.getElementById('modeDrBtn').className = mode === 'drive' ? 'btn btn-blue btn-sm' : 'btn btn-ghost btn-sm';
+}
+
+// ========== PHONK PICKER ==========
+async function loadPhonkForRun() {
+  try {
+    const r = await fetch(B() + '/api/drive/audios');
+    const d = await r.json();
+    if (!d.files || !d.files.length) { toast('কোনো phonk পাওয়া যায়নি'); return; }
+    const html = d.files.map(f => `
+      <div class="file-item" id="pk_${f.id}" onclick="selectPhonk('${f.id}','${f.name.replace(/'/g,"\\'")}',this)">
+        <div style="font-size:16px">🎵</div>
+        <div class="file-item-name">${f.name}</div>
+      </div>
+    `).join('');
+    document.getElementById('rtPhonkList').innerHTML = html;
+    document.getElementById('drPhonkList').innerHTML = html;
+    // set saved drop times from phonkData
+    toast(`${d.files.length} টি phonk লোড হয়েছে`);
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+function selectPhonk(id, name, el) {
+  selectedPhonkId = id;
+  selectedPhonkName = name;
+  document.querySelectorAll('#rtPhonkList .file-item, #drPhonkList .file-item').forEach(e => e.classList.remove('selected'));
+  // select both rt and dr list items
+  const rt = document.getElementById('pk_' + id);
+  if (rt) rt.classList.add('selected');
+  // set drop time from saved phonkData if exists
+  const saved = phonkData.find(p => p.name === name);
+  if (saved) {
+    document.getElementById('rtDropTime').value = saved.dropTime || 0;
+    document.getElementById('drDropTime').value = saved.dropTime || 0;
+  }
+}
+
+// ========== DOWNLOAD → DRIVE ==========
+function addDlLog(msg) {
+  const box = document.getElementById('dlLog');
+  if (box.textContent === 'লগ এখানে দেখাবে...') box.innerHTML = '';
+  const line = document.createElement('div');
+  line.className = 'log-line' + (msg.includes('Error') ? ' err' : msg.includes('সেভ') || msg.includes('✓') ? ' ok' : '');
+  line.textContent = msg;
+  box.appendChild(line);
+  box.scrollTop = box.scrollHeight;
+}
+
+async function saveVideoToDrive() {
+  const url = document.getElementById('dlVideoUrl').value.trim();
+  if (!url) { toast('YouTube URL দিন'); return; }
+  try {
+    const r = await fetch(B() + '/api/yt/save-video', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+    const d = await r.json();
+    if (d.jobId) { toast('শুরু হয়েছে!'); pollDlJob(d.jobId); }
+    else toast('Error: ' + (d.error || 'unknown'));
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function saveAudioToDrive() {
+  const url = document.getElementById('dlAudioUrl').value.trim();
+  if (!url) { toast('YouTube URL দিন'); return; }
+  try {
+    const r = await fetch(B() + '/api/yt/save-audio', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+    const d = await r.json();
+    if (d.jobId) { toast('শুরু হয়েছে!'); pollDlJob(d.jobId); }
+    else toast('Error: ' + (d.error || 'unknown'));
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function pollDlJob(jobId) {
+  const t = setInterval(async () => {
+    try {
+      const r = await fetch(B() + '/api/job/' + jobId);
+      const d = await r.json();
+      if (d.log) d.log.forEach(l => { if (!document.getElementById('dlLog').textContent.includes(l)) addDlLog(l); });
+      if (d.status === 'done') { clearInterval(t); toast('Drive-এ সেভ হয়েছে!'); }
+      else if (d.status === 'error') { clearInterval(t); toast('Error!'); }
+    } catch {}
+  }, 2000);
+}
+
+// ========== REAL-TIME RUN ==========
+async function runRealtime() {
+  const ytUrl = document.getElementById('rtVideoUrl').value.trim();
+  if (!ytUrl) { toast('YouTube URL দিন'); return; }
+  if (!selectedPhonkId) { toast('Phonk বেছে নিন'); return; }
+  const dropTime = parseFloat(document.getElementById('rtDropTime').value) || 0;
+  const freezeSec = parseFloat(document.getElementById('rtFreeze').value) || 3;
+  const textOverlay = document.getElementById('rtText').value.trim();
+  const textTime = parseFloat(document.getElementById('rtTextTime').value) || 2;
+  try {
+    const r = await fetch(B() + '/api/run/realtime', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ytUrl, phonkFileId: selectedPhonkId, dropTime, freezeSec, textOverlay, textTime })
+    });
+    const d = await r.json();
+    if (d.jobId) { toast('শুরু হয়েছে!'); document.getElementById('logBox').innerHTML = ''; pollJob(d.jobId); }
+    else toast('Error: ' + (d.error || 'unknown'));
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+// ========== DRIVE RUN ==========
+// ========== DRIVE RUN ==========
+async function runNow() {
+  const videoId = document.getElementById('drVideoId').value.trim();
+  if (!videoId) { toast('Video File ID দিন'); return; }
+  if (!selectedPhonkId) { toast('Phonk বেছে নিন'); return; }
+  const dropTime = parseFloat(document.getElementById('drDropTime').value) || 0;
+  // patch phonkList with selected phonk + drop time for this run
+  const cfg_patch = { phonkList: [{ name: selectedPhonkName, dropTime }] };
+  await fetch(B() + '/api/config/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg_patch) });
+  try {
+    const r = await fetch(B() + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoFileId: videoId }) });
+    const d = await r.json();
+    if (d.jobId) { toast('শুরু হয়েছে!'); document.getElementById('logBox').innerHTML = ''; pollJob(d.jobId); }
+    else toast('Error: ' + (d.error || 'unknown'));
+  } catch(e) { toast('Error: ' + e.message); }
+}
+
+async function pollJob(jobId) {
+  const t = setInterval(async () => {
+    try {
+      const r = await fetch(B() + '/api/job/' + jobId);
+      const d = await r.json();
+      if (d.log && d.log.length) {
+        const box = document.getElementById('logBox');
+        box.innerHTML = '';
+        d.log.forEach(l => {
+          const line = document.createElement('div');
+          line.className = 'log-line' + (l.includes('Error') ? ' err' : l.includes('সফল') ? ' ok' : '');
+          line.textContent = l;
+          box.appendChild(line);
+        });
+        box.scrollTop = box.scrollHeight;
+      }
+      if (d.status === 'done') {
+        clearInterval(t);
+        toast('আপলোড সফল!');
+        if (d.result && d.result.url) addLog('URL: ' + d.result.url);
+      } else if (d.status === 'error') {
+        clearInterval(t);
+        toast('Error: ' + d.error);
+      }
+    } catch {}
+  }, 2000);
+}
+
+// ========== INIT ==========
+async function loadSavedConfig() {
+  try {
+    const r = await fetch(B() + '/api/config');
+    const cfg = await r.json();
+    if (cfg.clientId) document.getElementById('clientId').value = cfg.clientId;
+    if (cfg.clientSecret) document.getElementById('clientSecret').value = cfg.clientSecret;
+    if (cfg.driveFolderId) document.getElementById('videoFolderId').value = cfg.driveFolderId;
+    if (cfg.driveAudioFolderId) document.getElementById('audioFolderId').value = cfg.driveAudioFolderId;
+    if (cfg.freezeSec) document.getElementById('freezeSec').value = cfg.freezeSec;
+    if (cfg.textOverlay) { document.getElementById('textOverlay').value = cfg.textOverlay; document.getElementById('textToggle').classList.add('on'); }
+    if (cfg.textTime) document.getElementById('textTime').value = cfg.textTime;
+    if (cfg.scheduleTime) document.getElementById('schedTime').value = cfg.scheduleTime;
+    if (cfg.enabled) document.getElementById('schedToggle').classList.add('on');
+    if (cfg.skullPath) document.getElementById('skullStatus').textContent = 'Skull আপলোড করা আছে ✓';
+    if (cfg.phonkList && cfg.phonkList.length) { phonkData = cfg.phonkList; renderPhonkList(); }
+    // Set day buttons
+    document.querySelectorAll('#dayBtns .dbtn').forEach(b => {
+      if (cfg.scheduleDays && cfg.scheduleDays.includes(b.dataset.d)) b.classList.add('on');
+      b.onclick = () => b.classList.toggle('on');
+    });
+  } catch(e) {}
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  checkAuth();
+  loadSavedConfig();
+  setInterval(checkAuth, 30000);
+  // Day btn click
+  document.querySelectorAll('#dayBtns .dbtn').forEach(b => { b.onclick = () => b.classList.toggle('on'); });
+});
+</script>
+</body>
+</html>
