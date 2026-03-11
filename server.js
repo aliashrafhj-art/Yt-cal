@@ -24,7 +24,7 @@ function setupCookies() {
 
 function ytdlpCmd(args) {
   const cookieFlag = fs.existsSync(COOKIES_FILE) ? ' --cookies "' + COOKIES_FILE + '"' : '';
-  return 'yt-dlp' + cookieFlag + ' ' + args;
+  return 'yt-dlp' + cookieFlag + ' --remote-components ejs:github ' + args;
 }
 setupCookies();
 
