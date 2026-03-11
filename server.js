@@ -220,6 +220,201 @@ app.get('/api/drive/audios', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ========== YT DOWNLOAD → DRIVE ==========
+// Download YT video → save to Drive video folder
+app.post('/api/yt/save-video', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  const jobId = createJob();
+  res.json({ jobId });
+  (async () => {
+    const fetch = (await import('node-fetch')).default;
+    jobs[jobId] = { status: 'running', log: ['Video নামানো শুরু...'] };
+    const log = (m) => { console.log(m); jobs[jobId].log = [...jobs[jobId].log, m]; };
+    const tempPath = path.join(TEMP_DIR, `yt_vid_${jobId}.mp4`);
+    try {
+      const driveToken = await getDriveToken();
+      if (!driveToken) throw new Error('Drive সংযুক্ত নয়');
+      const cfg = loadConfig();
+      if (!cfg.driveFolderId) throw new Error('Drive video folder ID নেই');
+
+      log('yt-dlp দিয়ে নামানো হচ্ছে...');
+      await execAsync(`yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --merge-output-format mp4 --no-playlist -o "${tempPath}" "${url}"`);
+      log('নামানো হয়েছে, Drive-এ পাঠানো হচ্ছে...');
+
+      const fileName = `video_${Date.now()}.mp4`;
+      const fileBuffer = fs.readFileSync(tempPath);
+      const boundary = 'drivebnd' + jobId;
+      const meta = JSON.stringify({ name: fileName, parents: [cfg.driveFolderId] });
+      const part1 = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: video/mp4\r\n\r\n`);
+      const part2 = Buffer.from(`\r\n--${boundary}--`);
+      const body = Buffer.concat([part1, fileBuffer, part2]);
+
+      const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${driveToken}`, 'Content-Type': `multipart/related; boundary=${boundary}`, 'Content-Length': String(body.length) },
+        body
+      });
+      const d = await r.json();
+      if (!d.id) throw new Error('Drive upload failed: ' + JSON.stringify(d));
+      log(`Drive-এ সেভ হয়েছে: ${fileName}`);
+      fs.unlinkSync(tempPath);
+      jobs[jobId] = { status: 'done', log: jobs[jobId].log, result: { fileId: d.id, name: fileName } };
+    } catch(e) {
+      try { if(fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
+      log('Error: ' + e.message);
+      jobs[jobId] = { status: 'error', error: e.message, log: jobs[jobId].log };
+    }
+  })();
+});
+
+// Download YT audio → save to Drive audio folder
+app.post('/api/yt/save-audio', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ error: 'url required' });
+  const jobId = createJob();
+  res.json({ jobId });
+  (async () => {
+    const fetch = (await import('node-fetch')).default;
+    jobs[jobId] = { status: 'running', log: ['Audio নামানো শুরু...'] };
+    const log = (m) => { console.log(m); jobs[jobId].log = [...jobs[jobId].log, m]; };
+    const tempPath = path.join(TEMP_DIR, `yt_audio_${jobId}.mp3`);
+    try {
+      const driveToken = await getDriveToken();
+      if (!driveToken) throw new Error('Drive সংযুক্ত নয়');
+      const cfg = loadConfig();
+      if (!cfg.driveAudioFolderId) throw new Error('Drive audio folder ID নেই');
+
+      log('yt-dlp দিয়ে audio নামানো হচ্ছে...');
+      await execAsync(`yt-dlp -x --audio-format mp3 --audio-quality 0 --no-playlist -o "${tempPath}" "${url}"`);
+      log('নামানো হয়েছে, Drive-এ পাঠানো হচ্ছে...');
+
+      // Get title from yt-dlp
+      let title = `phonk_${Date.now()}`;
+      try {
+        const { stdout } = await execAsync(`yt-dlp --get-title --no-playlist "${url}"`);
+        title = stdout.trim().replace(/[\\/:*?"<>|]/g, '').substring(0, 80);
+      } catch {}
+      const fileName = `${title}.mp3`;
+
+      const fileBuffer = fs.readFileSync(tempPath);
+      const boundary = 'audiobnd' + jobId;
+      const meta = JSON.stringify({ name: fileName, parents: [cfg.driveAudioFolderId] });
+      const part1 = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: audio/mpeg\r\n\r\n`);
+      const part2 = Buffer.from(`\r\n--${boundary}--`);
+      const body = Buffer.concat([part1, fileBuffer, part2]);
+
+      const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${driveToken}`, 'Content-Type': `multipart/related; boundary=${boundary}`, 'Content-Length': String(body.length) },
+        body
+      });
+      const d = await r.json();
+      if (!d.id) throw new Error('Drive upload failed: ' + JSON.stringify(d));
+      log(`Drive-এ সেভ হয়েছে: ${fileName}`);
+      fs.unlinkSync(tempPath);
+      jobs[jobId] = { status: 'done', log: jobs[jobId].log, result: { fileId: d.id, name: fileName } };
+    } catch(e) {
+      try { if(fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
+      log('Error: ' + e.message);
+      jobs[jobId] = { status: 'error', error: e.message, log: jobs[jobId].log };
+    }
+  })();
+});
+
+// Real-time: YT video link → troll edit → YouTube upload directly
+app.post('/api/run/realtime', async (req, res) => {
+  const { ytUrl, phonkFileId, dropTime, freezeSec, textOverlay, textTime } = req.body;
+  if (!ytUrl || !phonkFileId) return res.status(400).json({ error: 'ytUrl and phonkFileId required' });
+  const jobId = createJob();
+  res.json({ jobId });
+  (async () => {
+    const fetch = (await import('node-fetch')).default;
+    jobs[jobId] = { status: 'running', log: ['Real-time edit শুরু...'] };
+    const log = (m) => { console.log(m); jobs[jobId].log = [...jobs[jobId].log, m]; };
+    const tempFiles = [];
+    try {
+      const cfg = loadConfig();
+      const driveToken = await getDriveToken();
+      const ytToken = await getYTToken();
+      if (!driveToken) throw new Error('Drive সংযুক্ত নয়');
+      if (!ytToken) throw new Error('YouTube সংযুক্ত নয়');
+      if (!cfg.skullPath || !fs.existsSync(cfg.skullPath)) throw new Error('Skull PNG নেই');
+
+      // Download video from YT
+      const videoPath = path.join(TEMP_DIR, `rt_vid_${jobId}.mp4`);
+      tempFiles.push(videoPath);
+      log('YT থেকে video নামানো হচ্ছে...');
+      await execAsync(`yt-dlp -f "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --merge-output-format mp4 --no-playlist -o "${videoPath}" "${ytUrl}"`);
+      log('Video নামানো হয়েছে');
+
+      // Download phonk from Drive
+      const phonkPath = path.join(TEMP_DIR, `rt_phonk_${jobId}.mp3`);
+      tempFiles.push(phonkPath);
+      log('Phonk Drive থেকে নামানো হচ্ছে...');
+      const pr = await fetch(`https://www.googleapis.com/drive/v3/files/${phonkFileId}?alt=media`, {
+        headers: { 'Authorization': `Bearer ${driveToken}` }
+      });
+      if (!pr.ok) throw new Error('Phonk download failed');
+      fs.writeFileSync(phonkPath, Buffer.from(await pr.arrayBuffer()));
+      log('Phonk নামানো হয়েছে');
+
+      // Get duration
+      const { stdout: durOut } = await execAsync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${videoPath}"`);
+      const duration = parseFloat(durOut.trim());
+      const fSec = Math.min(parseFloat(freezeSec) || cfg.freezeSec || 3, duration * 0.8);
+      const fStart = Math.max(0.1, duration - fSec);
+      const drop = parseFloat(dropTime) || 0;
+      log(`Duration: ${duration.toFixed(1)}s | Freeze: শেষ ${fSec.toFixed(1)}s`);
+
+      const outPath = path.join(TEMP_DIR, `rt_out_${jobId}.mp4`);
+      tempFiles.push(outPath);
+      const txt = (textOverlay || cfg.textOverlay || '').replace(/[':]/g, '');
+      const tTime = parseFloat(textTime) || cfg.textTime || 2;
+
+      // ffmpeg — mute original audio, use only phonk
+      let fc;
+      if (txt) {
+        fc = `[0:v]trim=end=${fStart},setpts=PTS-STARTPTS[before];[0:v]trim=start=${fStart},setpts=PTS-STARTPTS,select='eq(n\\,0)',loop=loop=-1:size=1,trim=duration=${fSec}[frozen];[frozen]eq=brightness=-0.25:saturation=0.2:contrast=1.5[dark];[1:v]scale=280:280[skull];[dark][skull]overlay=(W-w)/2:(H-h)/2[withskull];[withskull]drawtext=text='${txt}':fontcolor=white:fontsize=42:x=(w-text_w)/2:y=h*0.15:enable='between(t,0,${tTime})':box=1:boxcolor=black@0.5:boxborderw=8[withtext];[before][withtext]concat=n=2:v=1:a=0[outv];[2:a]atrim=start=${drop},asetpts=PTS-STARTPTS,volume=1.5[phonk_trim];[phonk_trim]atrim=end=${duration},asetpts=PTS-STARTPTS[outa]`;
+      } else {
+        fc = `[0:v]trim=end=${fStart},setpts=PTS-STARTPTS[before];[0:v]trim=start=${fStart},setpts=PTS-STARTPTS,select='eq(n\\,0)',loop=loop=-1:size=1,trim=duration=${fSec}[frozen];[frozen]eq=brightness=-0.25:saturation=0.2:contrast=1.5[dark];[1:v]scale=280:280[skull];[dark][skull]overlay=(W-w)/2:(H-h)/2[withskull];[before][withskull]concat=n=2:v=1:a=0[outv];[2:a]atrim=start=${drop},asetpts=PTS-STARTPTS,volume=1.5[phonk_trim];[phonk_trim]atrim=end=${duration},asetpts=PTS-STARTPTS[outa]`;
+      }
+
+      log('ffmpeg চলছে...');
+      // -an on input 0 mutes original audio
+      await execAsync(`ffmpeg -y -i "${videoPath}" -i "${cfg.skullPath}" -i "${phonkPath}" -filter_complex "${fc}" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 23 -c:a aac -shortest "${outPath}"`);
+      log('Edit হয়েছে, YouTube-এ upload হচ্ছে...');
+
+      // Upload to YT
+      const videoBuffer = fs.readFileSync(outPath);
+      const title = `Troll Edit ${new Date().toLocaleDateString('bn-BD')}`.substring(0, 100);
+      const metaBody = JSON.stringify({
+        snippet: { title, description: 'Wait for the end...\n\n#shorts #viral #phonk #trolledit #skulledit #waitfortheend', tags: ['shorts', 'viral', 'phonk', 'troll edit', 'skull edit', 'satisfying', 'wait for end'], categoryId: '22' },
+        status: { privacyStatus: 'public' }
+      });
+      const boundary = `rt${jobId}`;
+      const p1 = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metaBody}\r\n--${boundary}\r\nContent-Type: video/mp4\r\n\r\n`);
+      const p2 = Buffer.from(`\r\n--${boundary}--`);
+      const fullBody = Buffer.concat([p1, videoBuffer, p2]);
+      const upRes = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=multipart&part=snippet,status', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${ytToken}`, 'Content-Type': `multipart/related; boundary=${boundary}`, 'Content-Length': String(fullBody.length) },
+        body: fullBody
+      });
+      const upText = await upRes.text();
+      if (!upRes.ok) throw new Error('YT upload: ' + upText);
+      const ytData = JSON.parse(upText);
+      log(`আপলোড সফল: https://youtu.be/${ytData.id}`);
+      tempFiles.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
+      jobs[jobId] = { status: 'done', log: jobs[jobId].log, result: { url: `https://youtu.be/${ytData.id}` } };
+    } catch(e) {
+      tempFiles.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
+      log('Error: ' + e.message);
+      jobs[jobId] = { status: 'error', error: e.message, log: jobs[jobId].log };
+    }
+  })();
+});
+
 // ========== CORE TROLL EDIT ==========
 async function processTrollEdit(videoFileId, jobId) {
   const fetch = (await import('node-fetch')).default;
