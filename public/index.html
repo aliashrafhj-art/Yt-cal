@@ -950,7 +950,9 @@ async function pollEditJob(jobId) {
       if (d.status === 'preview') {
         clearInterval(t);
         btn.textContent='🔥 Edit করো'; btn.disabled=false;
-        document.getElementById('previewVideo').src = B()+d.result.previewUrl;
+        const pvid = document.getElementById('previewVideo');
+        pvid.src = B()+d.result.previewUrl+'?t='+Date.now();
+        pvid.load();
         document.getElementById('previewSection').style.display = 'block';
         document.getElementById('previewSection').scrollIntoView({behavior:'smooth'});
         toast('Edit সম্পন্ন! Preview দেখুন 👇');
@@ -1413,7 +1415,9 @@ async function processMovieClip() {
         if (d2.log) { document.getElementById('movieLog').innerHTML=''; d2.log.forEach(l=>addMovieLog(l)); }
         if (d2.status === 'preview') {
           clearInterval(t); btn.textContent='🎬 Process করো'; btn.disabled=false;
-          document.getElementById('moviePreviewVideo').src = B()+d2.result.previewUrl;
+          const mvid = document.getElementById('moviePreviewVideo');
+          mvid.src = B()+d2.result.previewUrl+'?t='+Date.now();
+          mvid.load();
           document.getElementById('moviePreviewSection').style.display = 'block';
           document.getElementById('moviePreviewSection').scrollIntoView({behavior:'smooth'});
           toast('সম্পন্ন! Preview দেখুন 👇');
