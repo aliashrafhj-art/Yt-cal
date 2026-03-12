@@ -420,7 +420,7 @@ app.post('/api/run/realtime', async (req, res) => {
       if (beatSync) {
         // Cut "before" part first
         const beforeP = path.join(TEMP_DIR, 'rt_before_' + jobId + '.mp4'); tmp.push(beforeP);
-        await execAsync('ffmpeg -y -t ' + fStart + ' -i "' + vidP + '" -c copy "' + beforeP + '"', { maxBuffer: 50*1024*1024, timeout: 60000 });
+        await execAsync('ffmpeg -y -t ' + fStart + ' -i "' + trimmedVidP + '" -c copy "' + beforeP + '"', { maxBuffer: 50*1024*1024, timeout: 60000 });
 
         // Beat sync on "before" part
         const bsOutP = path.join(TEMP_DIR, 'rt_bs_' + jobId + '.mp4'); tmp.push(bsOutP);
@@ -430,7 +430,11 @@ app.post('/api/run/realtime', async (req, res) => {
         // Build freeze part
         const frz = '[0:v]' + sc + ',eq=brightness=' + (br-0.2) + ':contrast=' + (ct+0.2) + ':saturation=0.15,trim=start=' + fStart + ',setpts=PTS-STARTPTS,select=\'eq(n\\,0)\',loop=loop=-1:size=1,trim=duration=' + fSec + '[frz_raw]';
         const frzP = path.join(TEMP_DIR, 'rt_frz_' + jobId + '.mp4'); tmp.push(frzP);
-        await execAsync('ffmpeg -y -i "' + vidP + '" -i "' + cfg.skullPath + '" -filter_complex "' + frz + ';[1:v]scale=' + ss + ':' + ss + '[sk];[frz_raw][sk]overlay=' + sx + ':' + sy + '[wsk];[wsk]drawtext=text=\'' + ct2 + '\':fontcolor=white:fontsize=' + cSz + ':x=(w-text_w)/2:y=' + py(climaxPos||'bottom') + ':box=1:boxcolor=black@0.6:boxborderw=8[outv]" -map "[outv]" -an -c:v libx264 -preset ultrafast -crf 23 "' + frzP + '"', { maxBuffer: 100*1024*1024, timeout: 300000 });
+        if (useSkull) {
+          await execAsync('ffmpeg -y -i "' + trimmedVidP + '" -i "' + cfg.skullPath + '" -filter_complex "' + frz + ';[1:v]scale=' + ss + ':' + ss + '[sk];[frz_raw][sk]overlay=' + sx + ':' + sy + '[wsk];[wsk]drawtext=text=\'' + ct2 + '\':fontcolor=white:fontsize=' + cSz + ':x=(w-text_w)/2:y=' + py(climaxPos||'bottom') + ':box=1:boxcolor=black@0.6:boxborderw=8[outv]" -map "[outv]" -an -c:v libx264 -preset ultrafast -crf 23 "' + frzP + '"', { maxBuffer: 100*1024*1024, timeout: 300000 });
+        } else {
+          await execAsync('ffmpeg -y -i "' + trimmedVidP + '" -filter_complex "' + frz + ';[frz_raw]drawtext=text=\'' + ct2 + '\':fontcolor=white:fontsize=' + cSz + ':x=(w-text_w)/2:y=' + py(climaxPos||'bottom') + ':box=1:boxcolor=black@0.6:boxborderw=8[outv]" -map "[outv]" -an -c:v libx264 -preset ultrafast -crf 23 "' + frzP + '"', { maxBuffer: 100*1024*1024, timeout: 300000 });
+        }
 
         // Concat beat-synced before + freeze
         const concatL = path.join(TEMP_DIR, 'rt_cl_' + jobId + '.txt'); tmp.push(concatL);
@@ -439,7 +443,8 @@ app.post('/api/run/realtime', async (req, res) => {
         await execAsync('ffmpeg -y -f concat -safe 0 -i "' + concatL + '" -c copy "' + concatV + '"', { maxBuffer: 100*1024*1024, timeout: 120000 });
 
         // Add full phonk audio
-        await execAsync('ffmpeg -y -i "' + concatV + '" -i "' + phP + '" -filter_complex "[1:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=1.5[outa]" -map "0:v" -map "[outa]" -c:v copy -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 300000 });
+        const bsPhFilter = phonkLoop ? '[1:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=1.5,aloop=loop=-1:size=2e+09[outa]' : '[1:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=1.5[outa]';
+        await execAsync('ffmpeg -y -i "' + concatV + '" -i "' + phP + '" -filter_complex "' + bsPhFilter + '" -map "0:v" -map "[outa]" -c:v copy -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 300000 });
         log('Beat sync সম্পন্ন ✓');
       } else {
         // Step 1: before part (with color+text)
