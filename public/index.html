@@ -63,6 +63,10 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
 #beatSyncSlider::before { content:''; position:absolute; height:18px; width:18px; left:3px; bottom:3px; background:white; border-radius:50%; transition:.3s; }
 #editBeatSync:checked ~ span:first-of-type { background: var(--accent2) !important; }
 #editBeatSync:checked ~ #editBeatSyncKnob { transform: translateX(20px); }
+#editPhonkLoop:checked ~ span:first-of-type { background: var(--accent2) !important; }
+#editPhonkLoop:checked ~ span:last-of-type { transform: translateX(20px); }
+#editNoSkull:checked ~ span:first-of-type { background: var(--accent2) !important; }
+#editNoSkull:checked ~ span:last-of-type { transform: translateX(20px); }
 </style>
 </head>
 <body>
@@ -348,6 +352,32 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
         <input type="checkbox" id="editBeatSync" style="opacity:0;width:0;height:0">
         <span onclick="this.previousElementSibling.click()" style="position:absolute;cursor:pointer;inset:0;background:var(--surface2);border-radius:24px;transition:.3s;display:block"></span>
         <span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;pointer-events:none" id="editBeatSyncKnob"></span>
+      </label>
+    </div>
+
+    <!-- Phonk Loop -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text2)">🔁 Phonk Loop</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Phonk শেষ হলে বারবার চলবে</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
+        <input type="checkbox" id="editPhonkLoop" style="opacity:0;width:0;height:0">
+        <span onclick="this.previousElementSibling.click()" style="position:absolute;cursor:pointer;inset:0;background:var(--surface2);border-radius:24px;transition:.3s;display:block"></span>
+        <span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;pointer-events:none"></span>
+      </label>
+    </div>
+
+    <!-- No Skull -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text2)">💀 Skull বন্ধ</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Skull ছাড়া edit হবে</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
+        <input type="checkbox" id="editNoSkull" style="opacity:0;width:0;height:0">
+        <span onclick="this.previousElementSibling.click()" style="position:absolute;cursor:pointer;inset:0;background:var(--surface2);border-radius:24px;transition:.3s;display:block"></span>
+        <span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;pointer-events:none"></span>
       </label>
     </div>
 
@@ -1070,6 +1100,8 @@ async function runEdit() {
     colorSaturation: document.getElementById('colorSat').value,
     colorPreset: activePreset,
     beatSync: document.getElementById('editBeatSync').checked,
+    phonkLoop: document.getElementById('editPhonkLoop').checked,
+    noSkull: document.getElementById('editNoSkull').checked,
   };
   try {
     const r = await fetch(B()+'/api/run/realtime', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
