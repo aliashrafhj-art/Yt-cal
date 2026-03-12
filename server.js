@@ -340,10 +340,25 @@ async function applyBeatSyncCuts(inputP, phP, drop, dur, vfChain, outP, pVol, oV
   await execAsync('ffmpeg -y -i "' + inputP + '" -i "' + phP + '" -filter_complex "[0:v]' + vfChain + flashFilter + '[outv];[0:a]volume=' + oVol + '[oa];[1:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=' + pVol + '[pa];[oa][pa]amix=inputs=2:duration=first[outa]" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 22 -threads 2 -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 600000 });
 }
 
+
+// ========== REALTIME: GALLERY UPLOAD ==========
+const rtGalStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, TEMP_DIR),
+  filename: (req, file, cb) => cb(null, 'rtgal_' + Date.now() + '.mp4')
+});
+const rtGalleryUpload = multer({ storage: rtGalStorage, limits: { fileSize: 500*1024*1024 } });
+app.post('/api/rt/gallery-upload', rtGalleryUpload.single('video'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'file required' });
+  try {
+    const name = req.file.originalname || req.file.filename;
+    res.json({ ok: true, tempPath: req.file.path, fileName: name });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ========== TROLL EDIT REALTIME ==========
 app.post('/api/run/realtime', async (req, res) => {
-  const { ytUrl, driveFileId, phonkFileId, dropTime, freezeSec, introText, introSize, introPos, textTime, climaxText, climaxSize, climaxPos, skullSize, skullPos, colorBrightness, colorContrast, colorSaturation, colorPreset, beatSync, phonkLoop, noSkull } = req.body;
-  if ((!ytUrl && !driveFileId) || !phonkFileId) return res.status(400).json({ error: 'ytUrl or driveFileId and phonkFileId required' });
+  const { ytUrl, driveFileId, tempPath, phonkFileId, dropTime, freezeSec, introText, introSize, introPos, textTime, climaxText, climaxSize, climaxPos, skullSize, skullPos, colorBrightness, colorContrast, colorSaturation, colorPreset, beatSync, phonkLoop, noSkull } = req.body;
+  if ((!ytUrl && !driveFileId && !tempPath) || !phonkFileId) return res.status(400).json({ error: 'video source and phonkFileId required' });
   const jobId = createJob(); res.json({ jobId });
   (async () => {
     jobs[jobId] = { status: 'running', log: [] }; const log = (m) => jlog(jobId, m);
@@ -353,7 +368,12 @@ app.post('/api/run/realtime', async (req, res) => {
       const cfg = loadCfg();
       const useSkull = !noSkull && cfg.skullPath && fs.existsSync(cfg.skullPath);
       const vidP = path.join(TEMP_DIR, 'rtv_' + jobId + '.mp4'); tmp.push(vidP);
-      if (driveFileId) {
+      if (tempPath && fs.existsSync(tempPath)) {
+        log('Gallery video লোড হচ্ছে...');
+        fs.copyFileSync(tempPath, vidP);
+        try { fs.unlinkSync(tempPath); } catch {}
+        log('Ready ✓');
+      } else if (driveFileId) {
         log('Drive থেকে নামানো হচ্ছে...');
         const tok = await getDrive(); if (!tok) throw new Error('Drive সংযুক্ত নয়');
         const dr = await fetch('https://www.googleapis.com/drive/v3/files/' + driveFileId + '?alt=media', { headers: { Authorization: 'Bearer ' + tok } });
@@ -618,8 +638,12 @@ app.get('/api/movie/drive-browse', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ========== MOVIE: GALLERY UPLOAD TO DRIVE ==========
-const galleryUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500*1024*1024 } });
+// ========== MOVIE: GALLERY UPLOAD ==========
+const galleryStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, TEMP_DIR),
+  filename: (req, file, cb) => cb(null, 'mv_gal_' + Date.now() + '.mp4')
+});
+const galleryUpload = multer({ storage: galleryStorage, limits: { fileSize: 500*1024*1024 } });
 
 app.post('/api/movie/gallery-upload', galleryUpload.single('video'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'file required' });
@@ -627,44 +651,17 @@ app.post('/api/movie/gallery-upload', galleryUpload.single('video'), async (req,
   (async () => {
     jobs[jobId] = { status: 'running', log: [] }; const log = (m) => jlog(jobId, m);
     try {
-      const fetch = (await import('node-fetch')).default;
-      const tok = await getDrive(); if (!tok) throw new Error('Drive সংযুক্ত নয়');
-      const cfg = loadCfg();
-      const folderId = cfg.driveFolderId || null;
-      log('Drive-এ upload হচ্ছে...');
-      const name = req.file.originalname || ('gallery_' + Date.now() + '.mp4');
-      const mime = req.file.mimetype || 'video/mp4';
-      // Multipart upload
-      const boundary = '-------314159265358979323846';
-      const meta = JSON.stringify({ name, ...(folderId ? { parents: [folderId] } : {}) });
-      const CRLF = '\r\n';
-      const body = Buffer.concat([
-        Buffer.from('--' + boundary + CRLF + 'Content-Type: application/json; charset=UTF-8' + CRLF + CRLF),
-        Buffer.from(meta),
-        Buffer.from(CRLF + '--' + boundary + CRLF + 'Content-Type: ' + mime + CRLF + CRLF),
-        req.file.buffer,
-        Buffer.from(CRLF + '--' + boundary + '--')
-      ]);
-      const ur = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'multipart/related; boundary="' + boundary + '"' },
-        body
-      });
-      const ud = await ur.json();
-      if (!ud.id) throw new Error('Upload failed: ' + JSON.stringify(ud));
-      log('Upload সম্পন্ন ✓ — ' + name);
-
-      // Now copy to temp and get duration
+      const name = req.file.originalname || req.file.filename;
+      log('Video পাওয়া গেছে: ' + name);
+      // Rename to standard jobId-based name
       const out = path.join(TEMP_DIR, 'mv_' + jobId + '.mp4');
+      fs.renameSync(req.file.path, out);
       log('Processing শুরু হচ্ছে...');
-      const dr = await fetch('https://www.googleapis.com/drive/v3/files/' + ud.id + '?alt=media', { headers: { Authorization: 'Bearer ' + tok } });
-      const buf = Buffer.from(await dr.arrayBuffer());
-      fs.writeFileSync(out, buf);
       const { stdout } = await execAsync('ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "' + out + '"');
       const dur = parseFloat(stdout.trim());
       log('Ready! ' + Math.floor(dur/60) + 'm ' + Math.floor(dur%60) + 's ✓');
-      jobs[jobId] = { status: 'done', log: jobs[jobId].log, result: { moviePath: out, duration: dur, jobId, driveFileId: ud.id, fileName: name } };
-    } catch(e) { log('Error: ' + e.message); jobs[jobId] = { status: 'error', error: e.message, log: jobs[jobId].log }; }
+      jobs[jobId] = { status: 'done', log: jobs[jobId].log, result: { moviePath: out, duration: dur, jobId, fileName: name } };
+    } catch(e) { try { if(req.file && req.file.path) fs.unlinkSync(req.file.path); } catch {} log('Error: ' + e.message); jobs[jobId] = { status: 'error', error: e.message, log: jobs[jobId].log }; }
   })();
 });
 
