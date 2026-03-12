@@ -348,11 +348,9 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
         <div style="font-size:11px;font-weight:700;color:var(--text2)">🥁 Beat Sync Cut</div>
         <div style="font-size:10px;color:var(--text2);margin-top:2px">Phonk beat-এ video jump cut হবে</div>
       </div>
-      <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
-        <input type="checkbox" id="editBeatSync" style="opacity:0;width:0;height:0">
-        <span onclick="this.previousElementSibling.click()" style="position:absolute;cursor:pointer;inset:0;background:var(--surface2);border-radius:24px;transition:.3s;display:block"></span>
-        <span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;pointer-events:none" id="editBeatSyncKnob"></span>
-      </label>
+      <div id="tog_editBeatSync" onclick="toggleSwitch('editBeatSync')" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;background:var(--surface2);border-radius:24px;transition:.3s">
+        <div id="knob_editBeatSync" style="position:absolute;height:18px;width:18px;left:3px;top:3px;background:white;border-radius:50%;transition:.3s"></div>
+      </div>
     </div>
 
     <!-- Phonk Loop -->
@@ -361,11 +359,9 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
         <div style="font-size:11px;font-weight:700;color:var(--text2)">🔁 Phonk Loop</div>
         <div style="font-size:10px;color:var(--text2);margin-top:2px">Phonk শেষ হলে বারবার চলবে</div>
       </div>
-      <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
-        <input type="checkbox" id="editPhonkLoop" style="opacity:0;width:0;height:0">
-        <span onclick="this.previousElementSibling.click()" style="position:absolute;cursor:pointer;inset:0;background:var(--surface2);border-radius:24px;transition:.3s;display:block"></span>
-        <span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;pointer-events:none"></span>
-      </label>
+      <div id="tog_editPhonkLoop" onclick="toggleSwitch('editPhonkLoop')" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;background:var(--surface2);border-radius:24px;transition:.3s">
+        <div id="knob_editPhonkLoop" style="position:absolute;height:18px;width:18px;left:3px;top:3px;background:white;border-radius:50%;transition:.3s"></div>
+      </div>
     </div>
 
     <!-- No Skull -->
@@ -374,11 +370,9 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
         <div style="font-size:11px;font-weight:700;color:var(--text2)">💀 Skull বন্ধ</div>
         <div style="font-size:10px;color:var(--text2);margin-top:2px">Skull ছাড়া edit হবে</div>
       </div>
-      <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
-        <input type="checkbox" id="editNoSkull" style="opacity:0;width:0;height:0">
-        <span onclick="this.previousElementSibling.click()" style="position:absolute;cursor:pointer;inset:0;background:var(--surface2);border-radius:24px;transition:.3s;display:block"></span>
-        <span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;pointer-events:none"></span>
-      </label>
+      <div id="tog_editNoSkull" onclick="toggleSwitch('editNoSkull')" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;background:var(--surface2);border-radius:24px;transition:.3s">
+        <div id="knob_editNoSkull" style="position:absolute;height:18px;width:18px;left:3px;top:3px;background:white;border-radius:50%;transition:.3s"></div>
+      </div>
     </div>
 
     <div style="height:1px;background:var(--border);margin-bottom:12px"></div>
@@ -995,6 +989,22 @@ async function pollDlJob(jobId) {
 
 // ========== EDIT + PREVIEW ==========
 
+
+// ===== TOGGLE SWITCH =====
+const toggleState = {};
+function toggleSwitch(id) {
+  toggleState[id] = !toggleState[id];
+  const tog = document.getElementById('tog_' + id);
+  const knob = document.getElementById('knob_' + id);
+  if (toggleState[id]) {
+    tog.style.background = 'var(--accent2)';
+    knob.style.left = '23px';
+  } else {
+    tog.style.background = 'var(--surface2)';
+    knob.style.left = '3px';
+  }
+}
+
 // ===== REALTIME SOURCE TABS =====
 let rtSelectedDriveFileId = null;
 let rtSelectedGalleryFile = null;
@@ -1061,21 +1071,16 @@ async function runEdit() {
   if (!selectedPhonkId) { toast('Phonk বেছে নিন'); return; }
 
   // If gallery, upload first
+  let rtTempPath = null;
   if (galleryFile) {
     toast('⏳ Upload হচ্ছে...');
     const form = new FormData(); form.append('video', galleryFile);
     try {
-      const ur = await fetch(B()+'/api/movie/gallery-upload', { method:'POST', body: form });
+      const ur = await fetch(B()+'/api/rt/gallery-upload', { method:'POST', body: form });
       const ud = await ur.json();
-      if (!ud.jobId) { toast('Upload error'); return; }
-      // Poll until done
-      await new Promise((resolve, reject) => {
-        const t = setInterval(async () => {
-          const d2 = await (await fetch(B()+'/api/job/'+ud.jobId)).json();
-          if (d2.status==='done') { clearInterval(t); rtSelectedDriveFileId = d2.result.driveFileId; resolve(); }
-          else if (d2.status==='error') { clearInterval(t); reject(new Error(d2.error)); }
-        }, 2000);
-      });
+      if (!ud.ok || !ud.tempPath) { toast('Upload error: '+(ud.error||'?')); return; }
+      rtTempPath = ud.tempPath;
+      toast('✓ Upload সম্পন্ন');
     } catch(e) { toast('Upload Error: '+e.message); return; }
   }
   document.getElementById('previewSection').style.display = 'none';
@@ -1083,7 +1088,7 @@ async function runEdit() {
   btn.textContent = '⏳ Edit হচ্ছে...'; btn.disabled = true;
   document.getElementById('logBox').innerHTML = '';
   const body = {
-    ytUrl: ytUrl || undefined, driveFileId: (activeTab===2||activeTab===3) ? rtSelectedDriveFileId : undefined, phonkFileId: selectedPhonkId,
+    ytUrl: ytUrl || undefined, driveFileId: activeTab===2 ? rtSelectedDriveFileId : undefined, tempPath: rtTempPath || undefined, phonkFileId: selectedPhonkId,
     dropTime: parseFloat(document.getElementById('rtDropTime').value)||0,
     freezeSec: parseFloat(document.getElementById('rtFreeze').value)||3,
     introText: document.getElementById('introText').value.trim(),
@@ -1099,9 +1104,9 @@ async function runEdit() {
     colorContrast: document.getElementById('colorContrast').value,
     colorSaturation: document.getElementById('colorSat').value,
     colorPreset: activePreset,
-    beatSync: document.getElementById('editBeatSync').checked,
-    phonkLoop: document.getElementById('editPhonkLoop').checked,
-    noSkull: document.getElementById('editNoSkull').checked,
+    beatSync: toggleState.editBeatSync || false,
+    phonkLoop: toggleState.editPhonkLoop || false,
+    noSkull: toggleState.editNoSkull || false,
   };
   try {
     const r = await fetch(B()+'/api/run/realtime', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
