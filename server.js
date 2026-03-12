@@ -37,6 +37,35 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/temp', express.static(TEMP_DIR));
+
+// Proper video streaming with Range support
+app.get('/stream/:file', (req, res) => {
+  const filePath = path.join(TEMP_DIR, path.basename(req.params.file));
+  if (!fs.existsSync(filePath)) return res.status(404).end();
+  const stat = fs.statSync(filePath);
+  const fileSize = stat.size;
+  const range = req.headers.range;
+  if (range) {
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : Math.min(start + 10*1024*1024, fileSize - 1);
+    const chunkSize = end - start + 1;
+    res.writeHead(206, {
+      'Content-Range': 'bytes ' + start + '-' + end + '/' + fileSize,
+      'Accept-Ranges': 'bytes',
+      'Content-Length': chunkSize,
+      'Content-Type': 'video/mp4',
+    });
+    fs.createReadStream(filePath, { start, end }).pipe(res);
+  } else {
+    res.writeHead(200, {
+      'Content-Length': fileSize,
+      'Content-Type': 'video/mp4',
+      'Accept-Ranges': 'bytes',
+    });
+    fs.createReadStream(filePath).pipe(res);
+  }
+});
 const upload = multer({ dest: TEMP_DIR });
 
 // ========== JOBS ==========
@@ -313,7 +342,7 @@ async function applyBeatSyncCuts(inputP, phP, drop, dur, vfChain, outP, pVol, oV
 
 // ========== TROLL EDIT REALTIME ==========
 app.post('/api/run/realtime', async (req, res) => {
-  const { ytUrl, driveFileId, phonkFileId, dropTime, freezeSec, introText, introSize, introPos, textTime, climaxText, climaxSize, climaxPos, skullSize, skullPos, colorBrightness, colorContrast, colorSaturation, colorPreset, beatSync } = req.body;
+  const { ytUrl, driveFileId, phonkFileId, dropTime, freezeSec, introText, introSize, introPos, textTime, climaxText, climaxSize, climaxPos, skullSize, skullPos, colorBrightness, colorContrast, colorSaturation, colorPreset, beatSync, phonkLoop, noSkull } = req.body;
   if ((!ytUrl && !driveFileId) || !phonkFileId) return res.status(400).json({ error: 'ytUrl or driveFileId and phonkFileId required' });
   const jobId = createJob(); res.json({ jobId });
   (async () => {
@@ -322,7 +351,7 @@ app.post('/api/run/realtime', async (req, res) => {
     try {
       const fetch = (await import('node-fetch')).default;
       const cfg = loadCfg();
-      if (!cfg.skullPath || !fs.existsSync(cfg.skullPath)) throw new Error('Skull PNG নেই');
+      const useSkull = !noSkull && cfg.skullPath && fs.existsSync(cfg.skullPath);
       const vidP = path.join(TEMP_DIR, 'rtv_' + jobId + '.mp4'); tmp.push(vidP);
       if (driveFileId) {
         log('Drive থেকে নামানো হচ্ছে...');
@@ -340,13 +369,28 @@ app.post('/api/run/realtime', async (req, res) => {
       await dlPhonk(phonkFileId, phP);
 
       const { stdout: pb } = await execAsync('ffprobe -v error -select_streams v:0 -show_entries stream=width,height -show_entries format=duration -of json "' + vidP + '"');
-      const pd = JSON.parse(pb); const dur = parseFloat(pd.format.duration);
+      const pd = JSON.parse(pb); let dur = parseFloat(pd.format.duration);
       const vw = (pd.streams[0] || {}).width || 720, vh = (pd.streams[0] || {}).height || 1280;
       const tw = vw > vh ? 1920 : 1080, th = vw > vh ? 1080 : 1920;
+      const drop = parseFloat(dropTime) || 0;
+
+      // Phonk duration
+      const { stdout: phDurOut } = await execAsync('ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "' + phP + '"');
+      const phDur = parseFloat(phDurOut.trim()) || dur;
+      const effectiveDur = phDur - drop; // phonk usable duration
+
+      // If phonk shorter than video — trim video to match phonk
+      let trimmedVidP = vidP;
+      if (effectiveDur < dur && effectiveDur > 2) {
+        log('Phonk: ' + effectiveDur.toFixed(1) + 's → Video কাট হচ্ছে...');
+        trimmedVidP = path.join(TEMP_DIR, 'rtv_trim_' + jobId + '.mp4'); tmp.push(trimmedVidP);
+        await execAsync('ffmpeg -y -t ' + effectiveDur.toFixed(3) + ' -i "' + vidP + '" -c copy "' + trimmedVidP + '"', { maxBuffer: 100*1024*1024, timeout: 60000 });
+        dur = effectiveDur;
+      }
+
       const fSec = Math.min(parseFloat(freezeSec) || 3, dur * 0.8);
       const fStart = Math.max(0.1, dur - fSec);
-      const drop = parseFloat(dropTime) || 0;
-      log('Duration: ' + dur.toFixed(1) + 's | Freeze: ' + fSec + 's');
+      log('Duration: ' + dur.toFixed(1) + 's | Phonk: ' + effectiveDur.toFixed(1) + 's | Freeze: ' + fSec + 's');
 
       let br = parseFloat(colorBrightness) || 0, ct = parseFloat(colorContrast) || 1, st = parseFloat(colorSaturation) || 1;
       // Preset overrides manual sliders
@@ -398,11 +442,29 @@ app.post('/api/run/realtime', async (req, res) => {
         await execAsync('ffmpeg -y -i "' + concatV + '" -i "' + phP + '" -filter_complex "[1:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=1.5[outa]" -map "0:v" -map "[outa]" -c:v copy -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 300000 });
         log('Beat sync সম্পন্ন ✓');
       } else {
-        const bef = '[0:v]' + beforeVf + ',trim=end=' + fStart + ',setpts=PTS-STARTPTS[before]';
-        const frz = '[0:v]' + sc + ',eq=brightness=' + (br-0.2) + ':contrast=' + (ct+0.2) + ':saturation=0.15,trim=start=' + fStart + ',setpts=PTS-STARTPTS,select=\'eq(n\\,0)\',loop=loop=-1:size=1,trim=duration=' + fSec + '[frz_raw]';
-        const fc = bef + ';' + frz + ';[1:v]scale=' + ss + ':' + ss + '[sk];[frz_raw][sk]overlay=' + sx + ':' + sy + '[wsk];[wsk]drawtext=text=\'' + ct2 + '\':fontcolor=white:fontsize=' + cSz + ':x=(w-text_w)/2:y=' + py(climaxPos||'bottom') + ':box=1:boxcolor=black@0.6:boxborderw=8[frz];[2:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=1.5,atrim=end=' + dur + ',asetpts=PTS-STARTPTS[outa];[before][frz]concat=n=2:v=1:a=0[outv]';
-        log('ffmpeg চলছে...');
-        await execAsync('ffmpeg -y -i "' + vidP + '" -i "' + cfg.skullPath + '" -i "' + phP + '" -filter_complex "' + fc + '" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 23 -threads 2 -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 600000 });
+        // Step 1: before part (with color+text)
+        const befP = path.join(TEMP_DIR, 'rt_bef_' + jobId + '.mp4'); tmp.push(befP);
+        await execAsync('ffmpeg -y -t ' + fStart + ' -i "' + trimmedVidP + '" -vf "' + beforeVf + '" -c:v libx264 -preset ultrafast -crf 23 -threads 2 -c:a aac "' + befP + '"', { maxBuffer: 100*1024*1024, timeout: 300000 });
+
+        // Step 2: freeze frame (single frame looped)
+        const frzP = path.join(TEMP_DIR, 'rt_frz_' + jobId + '.mp4'); tmp.push(frzP);
+        const frzVf = sc + ',eq=brightness=' + (br-0.2) + ':contrast=' + (ct+0.2) + ':saturation=0.15';
+        if (useSkull) {
+          await execAsync('ffmpeg -y -ss ' + fStart + ' -i "' + trimmedVidP + '" -i "' + cfg.skullPath + '" -filter_complex "[0:v]' + frzVf + '[fv];[fv]trim=duration=0.04,setpts=PTS-STARTPTS[ff];[1:v]scale=' + ss + ':' + ss + '[sk];[ff][sk]overlay=' + sx + ':' + sy + '[wsk];[wsk]drawtext=text=\'' + ct2 + '\':fontcolor=white:fontsize=' + cSz + ':x=(w-text_w)/2:y=' + py(climaxPos||'bottom') + ':box=1:boxcolor=black@0.6:boxborderw=8[outv]" -map "[outv]" -loop 1 -t ' + fSec + ' -c:v libx264 -preset ultrafast -crf 23 -an "' + frzP + '"', { maxBuffer: 100*1024*1024, timeout: 120000 });
+        } else {
+          await execAsync('ffmpeg -y -ss ' + fStart + ' -i "' + trimmedVidP + '" -filter_complex "[0:v]' + frzVf + '[fv];[fv]trim=duration=0.04,setpts=PTS-STARTPTS[ff];[ff]drawtext=text=\'' + ct2 + '\':fontcolor=white:fontsize=' + cSz + ':x=(w-text_w)/2:y=' + py(climaxPos||'bottom') + ':box=1:boxcolor=black@0.6:boxborderw=8[outv]" -map "[outv]" -loop 1 -t ' + fSec + ' -c:v libx264 -preset ultrafast -crf 23 -an "' + frzP + '"', { maxBuffer: 100*1024*1024, timeout: 120000 });
+        }
+
+        // Step 3: concat before + freeze
+        const concatL = path.join(TEMP_DIR, 'rt_cl_' + jobId + '.txt'); tmp.push(concatL);
+        fs.writeFileSync(concatL, "file '" + befP + "'\nfile '" + frzP + "'");
+        const concatV = path.join(TEMP_DIR, 'rt_cv_' + jobId + '.mp4'); tmp.push(concatV);
+        await execAsync('ffmpeg -y -f concat -safe 0 -i "' + concatL + '" -c:v libx264 -preset ultrafast -crf 23 -an "' + concatV + '"', { maxBuffer: 200*1024*1024, timeout: 180000 });
+
+        // Step 4: mix phonk audio
+        log('ffmpeg audio mix হচ্ছে...');
+        const phFilter = phonkLoop ? '[2:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=1.5,aloop=loop=-1:size=2e+09[pa]' : '[2:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=1.5[pa]';
+        await execAsync('ffmpeg -y -i "' + concatV + '" -i "' + befP + '" -i "' + phP + '" -filter_complex "[1:a]atrim=end=' + fStart + ',asetpts=PTS-STARTPTS,volume=0.7[oa];' + phFilter + ';[oa][pa]amix=inputs=2:duration=first[outa]" -map "0:v" -map "[outa]" -c:v copy -c:a aac -shortest "' + outP + '"', { maxBuffer: 200*1024*1024, timeout: 300000 });
       }
 
       tmp.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
