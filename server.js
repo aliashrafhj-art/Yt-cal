@@ -24,7 +24,7 @@ function setupCookies() {
 
 function ytdlpCmd(args) {
   const cookieFlag = fs.existsSync(COOKIES_FILE) ? ' --cookies "' + COOKIES_FILE + '"' : '';
-  return 'yt-dlp' + cookieFlag + ' --remote-components ejs:github ' + args;
+  return 'yt-dlp' + cookieFlag + ' ' + args;
 }
 setupCookies();
 
@@ -313,18 +313,28 @@ async function applyBeatSyncCuts(inputP, phP, drop, dur, vfChain, outP, pVol, oV
 
 // ========== TROLL EDIT REALTIME ==========
 app.post('/api/run/realtime', async (req, res) => {
-  const { ytUrl, phonkFileId, dropTime, freezeSec, introText, introSize, introPos, textTime, climaxText, climaxSize, climaxPos, skullSize, skullPos, colorBrightness, colorContrast, colorSaturation, colorPreset, beatSync } = req.body;
-  if (!ytUrl || !phonkFileId) return res.status(400).json({ error: 'ytUrl and phonkFileId required' });
+  const { ytUrl, driveFileId, phonkFileId, dropTime, freezeSec, introText, introSize, introPos, textTime, climaxText, climaxSize, climaxPos, skullSize, skullPos, colorBrightness, colorContrast, colorSaturation, colorPreset, beatSync } = req.body;
+  if ((!ytUrl && !driveFileId) || !phonkFileId) return res.status(400).json({ error: 'ytUrl or driveFileId and phonkFileId required' });
   const jobId = createJob(); res.json({ jobId });
   (async () => {
     jobs[jobId] = { status: 'running', log: [] }; const log = (m) => jlog(jobId, m);
     const tmp = [];
     try {
+      const fetch = (await import('node-fetch')).default;
       const cfg = loadCfg();
       if (!cfg.skullPath || !fs.existsSync(cfg.skullPath)) throw new Error('Skull PNG নেই');
       const vidP = path.join(TEMP_DIR, 'rtv_' + jobId + '.mp4'); tmp.push(vidP);
-      log('Video নামানো হচ্ছে...');
-      await execAsync(ytdlpCmd('-f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" --merge-output-format mp4 --no-playlist -o "' + vidP + '" "' + ytUrl + '"'), { maxBuffer: 100*1024*1024, timeout: 300000 });
+      if (driveFileId) {
+        log('Drive থেকে নামানো হচ্ছে...');
+        const tok = await getDrive(); if (!tok) throw new Error('Drive সংযুক্ত নয়');
+        const dr = await fetch('https://www.googleapis.com/drive/v3/files/' + driveFileId + '?alt=media', { headers: { Authorization: 'Bearer ' + tok } });
+        if (!dr.ok) throw new Error('Drive download failed: ' + dr.status);
+        fs.writeFileSync(vidP, Buffer.from(await dr.arrayBuffer()));
+        log('Drive থেকে নামানো হয়েছে ✓');
+      } else {
+        log('Video নামানো হচ্ছে...');
+        await execAsync(ytdlpCmd('-f "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]" --merge-output-format mp4 --no-playlist -o "' + vidP + '" "' + ytUrl + '"'), { maxBuffer: 100*1024*1024, timeout: 300000 });
+      }
       const phP = path.join(TEMP_DIR, 'rtp_' + jobId + '.mp3'); tmp.push(phP);
       log('Phonk নামানো হচ্ছে...');
       await dlPhonk(phonkFileId, phP);
@@ -339,9 +349,12 @@ app.post('/api/run/realtime', async (req, res) => {
       log('Duration: ' + dur.toFixed(1) + 's | Freeze: ' + fSec + 's');
 
       let br = parseFloat(colorBrightness) || 0, ct = parseFloat(colorContrast) || 1, st = parseFloat(colorSaturation) || 1;
-      if (colorPreset === 'dark') { br = -0.1; ct = 1.3; st = 0.8; }
-      else if (colorPreset === 'phonk_red') { br = -0.05; ct = 1.4; st = 1.2; }
-      else if (colorPreset === 'cold_blue') { br = 0; ct = 1.2; st = 0.7; }
+      // Preset overrides manual sliders
+      if (colorPreset === 'dark' || colorPreset === 'dark_cinema') { br = -0.15; ct = 1.4; st = 0.6; }
+      else if (colorPreset === 'believer') { br = -0.08; ct = 1.5; st = 0.25; }
+      else if (colorPreset === 'phonk_red') { br = -0.05; ct = 1.6; st = 0.8; }
+      else if (colorPreset === 'cold_blue') { br = 0; ct = 1.3; st = 0.5; }
+      else if (colorPreset === 'original' || colorPreset === 'none') { br = 0; ct = 1.0; st = 1.0; }
 
       const ss = parseInt(skullSize) || 280;
       const sp = skullPos || 'center';
@@ -521,6 +534,95 @@ app.get('/api/movie/thumb', async (req, res) => {
     res.setHeader('Content-Type', 'image/jpeg');
     res.send(fs.readFileSync(thumbPath));
   } catch(e) { res.status(500).end(); }
+});
+
+
+// ========== MOVIE: DRIVE BROWSE ==========
+app.get('/api/movie/drive-browse', async (req, res) => {
+  try {
+    const fetch = (await import('node-fetch')).default;
+    const tok = await getDrive(); if (!tok) return res.status(401).json({ error: 'Drive সংযুক্ত নয়' });
+    const folderId = req.query.folderId || 'root';
+    // List folders and video files
+    const q = encodeURIComponent("'" + folderId + "' in parents and trashed=false and (mimeType='application/vnd.google-apps.folder' or mimeType contains 'video/')");
+    const r = await fetch('https://www.googleapis.com/drive/v3/files?q=' + q + '&fields=files(id,name,mimeType,size)&orderBy=folder,name&pageSize=100', { headers: { Authorization: 'Bearer ' + tok } });
+    const data = await r.json();
+    res.json({ files: data.files || [], folderId });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ========== MOVIE: GALLERY UPLOAD TO DRIVE ==========
+const galleryUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500*1024*1024 } });
+
+app.post('/api/movie/gallery-upload', galleryUpload.single('video'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'file required' });
+  const jobId = createJob(); res.json({ jobId });
+  (async () => {
+    jobs[jobId] = { status: 'running', log: [] }; const log = (m) => jlog(jobId, m);
+    try {
+      const fetch = (await import('node-fetch')).default;
+      const tok = await getDrive(); if (!tok) throw new Error('Drive সংযুক্ত নয়');
+      const cfg = loadCfg();
+      const folderId = cfg.driveFolderId || null;
+      log('Drive-এ upload হচ্ছে...');
+      const name = req.file.originalname || ('gallery_' + Date.now() + '.mp4');
+      const mime = req.file.mimetype || 'video/mp4';
+      // Multipart upload
+      const boundary = '-------314159265358979323846';
+      const meta = JSON.stringify({ name, ...(folderId ? { parents: [folderId] } : {}) });
+      const CRLF = '\r\n';
+      const body = Buffer.concat([
+        Buffer.from('--' + boundary + CRLF + 'Content-Type: application/json; charset=UTF-8' + CRLF + CRLF),
+        Buffer.from(meta),
+        Buffer.from(CRLF + '--' + boundary + CRLF + 'Content-Type: ' + mime + CRLF + CRLF),
+        req.file.buffer,
+        Buffer.from(CRLF + '--' + boundary + '--')
+      ]);
+      const ur = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'multipart/related; boundary="' + boundary + '"' },
+        body
+      });
+      const ud = await ur.json();
+      if (!ud.id) throw new Error('Upload failed: ' + JSON.stringify(ud));
+      log('Upload সম্পন্ন ✓ — ' + name);
+
+      // Now copy to temp and get duration
+      const out = path.join(TEMP_DIR, 'mv_' + jobId + '.mp4');
+      log('Processing শুরু হচ্ছে...');
+      const dr = await fetch('https://www.googleapis.com/drive/v3/files/' + ud.id + '?alt=media', { headers: { Authorization: 'Bearer ' + tok } });
+      const buf = Buffer.from(await dr.arrayBuffer());
+      fs.writeFileSync(out, buf);
+      const { stdout } = await execAsync('ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "' + out + '"');
+      const dur = parseFloat(stdout.trim());
+      log('Ready! ' + Math.floor(dur/60) + 'm ' + Math.floor(dur%60) + 's ✓');
+      jobs[jobId] = { status: 'done', log: jobs[jobId].log, result: { moviePath: out, duration: dur, jobId, driveFileId: ud.id, fileName: name } };
+    } catch(e) { log('Error: ' + e.message); jobs[jobId] = { status: 'error', error: e.message, log: jobs[jobId].log }; }
+  })();
+});
+
+// ========== MOVIE: USE DRIVE FILE DIRECTLY ==========
+app.post('/api/movie/use-drive', async (req, res) => {
+  const { fileId, fileName } = req.body;
+  if (!fileId) return res.status(400).json({ error: 'fileId required' });
+  const jobId = createJob(); res.json({ jobId });
+  (async () => {
+    jobs[jobId] = { status: 'running', log: [] }; const log = (m) => jlog(jobId, m);
+    try {
+      const fetch = (await import('node-fetch')).default;
+      const tok = await getDrive(); if (!tok) throw new Error('Drive সংযুক্ত নয়');
+      log('Drive থেকে নামানো হচ্ছে...');
+      const out = path.join(TEMP_DIR, 'mv_' + jobId + '.mp4');
+      const dr = await fetch('https://www.googleapis.com/drive/v3/files/' + fileId + '?alt=media', { headers: { Authorization: 'Bearer ' + tok } });
+      if (!dr.ok) throw new Error('Drive download failed: ' + dr.status);
+      const buf = Buffer.from(await dr.arrayBuffer());
+      fs.writeFileSync(out, buf);
+      const { stdout } = await execAsync('ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "' + out + '"');
+      const dur = parseFloat(stdout.trim());
+      log('নামানো হয়েছে! ' + Math.floor(dur/60) + 'm ' + Math.floor(dur%60) + 's ✓');
+      jobs[jobId] = { status: 'done', log: jobs[jobId].log, result: { moviePath: out, duration: dur, jobId } };
+    } catch(e) { log('Error: ' + e.message); jobs[jobId] = { status: 'error', error: e.message, log: jobs[jobId].log }; }
+  })();
 });
 
 app.post('/api/movie/download', async (req, res) => {
