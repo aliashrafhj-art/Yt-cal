@@ -305,10 +305,6 @@ async function applyBeatSyncCuts(inputP, phP, drop, dur, vfChain, outP, pVol, oV
   const beats = await detectBeats(phP, drop, dur);
   log('Beat পাওয়া গেছে: ' + beats.length + ' টি');
 
-  const flashExpr = beats.map(bt => 'between(t,' + bt + ',' + (bt+0.08).toFixed(3) + ')').join('+');
-  const flashFilter = flashExpr ? ',eq=brightness=\'if(' + flashExpr + ',0.25,0)\':contrast=\'if(' + flashExpr + ',1.3,1)\'' : '';
-
-  // Build jump cuts at every other beat
   const cuts = beats.filter((_, i) => i % 2 === 0).slice(0, 10);
   if (cuts.length >= 3) {
     const segs = [];
@@ -320,24 +316,39 @@ async function applyBeatSyncCuts(inputP, phP, drop, dur, vfChain, outP, pVol, oV
 
     if (segs.length >= 2) {
       log('Jump cut: ' + segs.length + ' segment তৈরি হচ্ছে...');
+      // Each segment: re-encode with color filter + reset PTS — no audio (added later)
       const segFiles = [];
       for (let i = 0; i < segs.length; i++) {
         const segP = path.join(TEMP_DIR, 'seg_' + pId + '_' + i + '.mp4'); tmp.push(segP);
-        await execAsync('ffmpeg -y -ss ' + segs[i].s + ' -i "' + inputP + '" -t ' + (segs[i].e - segs[i].s).toFixed(3) + ' -c copy "' + segP + '"', { maxBuffer: 20*1024*1024, timeout: 60000 });
+        const segDur = (segs[i].e - segs[i].s).toFixed(3);
+        await execAsync(
+          'ffmpeg -y -ss ' + segs[i].s + ' -t ' + segDur + ' -i "' + inputP + '" -vf "' + vfChain + ',setpts=PTS-STARTPTS" -an -c:v libx264 -preset ultrafast -crf 23 "' + segP + '"',
+          { maxBuffer: 50*1024*1024, timeout: 120000 }
+        );
         segFiles.push(segP);
       }
+      // Concat video-only segments
       const listP = path.join(TEMP_DIR, 'clist_' + pId + '.txt'); tmp.push(listP);
       fs.writeFileSync(listP, segFiles.map(f => "file '" + f + "'").join('\n'));
       const joinP = path.join(TEMP_DIR, 'joined_' + pId + '.mp4'); tmp.push(joinP);
-      await execAsync('ffmpeg -y -f concat -safe 0 -i "' + listP + '" -c copy "' + joinP + '"', { maxBuffer: 50*1024*1024, timeout: 120000 });
+      await execAsync('ffmpeg -y -f concat -safe 0 -i "' + listP + '" -c copy "' + joinP + '"', { maxBuffer: 100*1024*1024, timeout: 120000 });
       log('Color + audio mix হচ্ছে...');
-      await execAsync('ffmpeg -y -i "' + joinP + '" -i "' + phP + '" -filter_complex "[0:v]' + vfChain + flashFilter + '[outv];[0:a]volume=' + oVol + '[oa];[1:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=' + pVol + '[pa];[oa][pa]amix=inputs=2:duration=first[outa]" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 22 -threads 2 -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 600000 });
+      // Add phonk audio only (no original audio — beats already cut clean)
+      await execAsync(
+        'ffmpeg -y -i "' + joinP + '" -i "' + phP + '" -filter_complex "[1:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=' + pVol + '[outa]" -map "0:v" -map "[outa]" -c:v copy -c:a aac -shortest "' + outP + '"',
+        { maxBuffer: 100*1024*1024, timeout: 300000 }
+      );
       return;
     }
   }
-  // Fallback: flash only
+  // Fallback: flash + color filter, no jump cuts
   log('Flash beat sync হচ্ছে...');
-  await execAsync('ffmpeg -y -i "' + inputP + '" -i "' + phP + '" -filter_complex "[0:v]' + vfChain + flashFilter + '[outv];[0:a]volume=' + oVol + '[oa];[1:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=' + pVol + '[pa];[oa][pa]amix=inputs=2:duration=first[outa]" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 22 -threads 2 -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 600000 });
+  const flashExpr = beats.map(bt => 'between(t,' + bt + ',' + (bt+0.08).toFixed(3) + ')').join('+');
+  const flashFilter = flashExpr ? ',eq=brightness=\'if(' + flashExpr + ',0.25,0)\':contrast=\'if(' + flashExpr + ',1.3,1)\'' : '';
+  await execAsync(
+    'ffmpeg -y -i "' + inputP + '" -i "' + phP + '" -filter_complex "[0:v]' + vfChain + flashFilter + '[outv];[1:a]atrim=start=' + drop + ',asetpts=PTS-STARTPTS,volume=' + pVol + '[outa]" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 22 -threads 2 -c:a aac -shortest "' + outP + '"',
+    { maxBuffer: 100*1024*1024, timeout: 600000 }
+  );
 }
 
 
@@ -799,71 +810,54 @@ app.post('/api/movie/process', async (req, res) => {
       // ===== BEAT SYNC JUMP CUT =====
       if (beatSync && phP) {
         log('Beat detect করা হচ্ছে...');
-
-        // Beat detect — shared detectBeats function use করো (reliable, no pipe)
-        let beatTimes = await detectBeats(phP, dp, cd);
-
+        const beatTimes = await detectBeats(phP, dp, cd);
         log('Beat পাওয়া গেছে: ' + beatTimes.length + ' টি');
 
-        // Build jump cut filter: at each beat, flash/zoom the video
-        // We use "select" to skip frames + zoom punch effect at beat points
-        // Create expression: at beat times, apply zoom + brightness flash
-        const beatExpr = beatTimes.map(bt => 'between(t,' + bt + ',' + (bt+0.08).toFixed(3) + ')').join('+');
-        const flashFilter = beatExpr.length > 0
-          ? ',eq=brightness=\'if(' + beatExpr + ',0.3,0)\':contrast=\'if(' + beatExpr + ',1.4,1)\''
-          : '';
+        const cuts = beatTimes.filter((_, i) => i % 2 === 0).slice(0, 8);
+        if (cuts.length >= 2) {
+          const segs = [];
+          for (let i = 0; i < cuts.length - 1; i++) {
+            const s = cuts[i], e = cuts[i+1] - 0.04;
+            if (e - s > 0.2) segs.push({ s, e });
+          }
+          segs.push({ s: cuts[cuts.length-1], e: cd });
 
-        // Jump cut: at each beat, seek slightly forward in the video (creates cut feel)
-        // Build setpts expression that skips 0.05s at each beat
-        let skipExpr = '';
-        if (beatTimes.length > 1) {
-          // Build a select filter that drops frames right before beat and shows frame after
-          // Simpler: use trim + concat approach for first few beats
-          const cuts = beatTimes.filter((_, i) => i % 2 === 0).slice(0, 8); // every other beat, max 8 cuts
-          if (cuts.length >= 2) {
-            // Build segments between cuts with small jumps
-            const segments = [];
-            for (let i = 0; i < cuts.length - 1; i++) {
-              const segStart = cuts[i];
-              const segEnd = cuts[i+1] - 0.04; // trim 40ms before next beat = jump cut feel
-              if (segEnd > segStart + 0.2) segments.push({ s: segStart, e: segEnd });
+          if (segs.length >= 2) {
+            log('Jump cut: ' + segs.length + ' segment তৈরি হচ্ছে...');
+            const segFiles = [];
+            for (let i = 0; i < segs.length; i++) {
+              const segP = path.join(TEMP_DIR, 'seg_' + pId + '_' + i + '.mp4'); tmp.push(segP);
+              await execAsync(
+                'ffmpeg -y -ss ' + segs[i].s + ' -t ' + (segs[i].e - segs[i].s).toFixed(3) + ' -i "' + clipP + '" -vf "' + vf + ',setpts=PTS-STARTPTS" -an -c:v libx264 -preset ultrafast -crf 23 "' + segP + '"',
+                { maxBuffer: 50*1024*1024, timeout: 120000 }
+              );
+              segFiles.push(segP);
             }
-            // Last segment
-            segments.push({ s: cuts[cuts.length-1], e: cd });
-
-            if (segments.length >= 2) {
-              log('Jump cut segments: ' + segments.length + ' টি তৈরি হচ্ছে...');
-              // Cut each segment to separate file then concat
-              const segFiles = [];
-              for (let i = 0; i < segments.length; i++) {
-                const seg = segments[i];
-                const segP = path.join(TEMP_DIR, 'seg_' + pId + '_' + i + '.mp4');
-                tmp.push(segP);
-                await execAsync('ffmpeg -y -ss ' + seg.s + ' -i "' + clipP + '" -t ' + (seg.e - seg.s).toFixed(3) + ' -c copy "' + segP + '"', { maxBuffer: 20*1024*1024, timeout: 60000 });
-                segFiles.push(segP);
-              }
-              // Concat list
-              const concatList = path.join(TEMP_DIR, 'concat_' + pId + '.txt');
-              tmp.push(concatList);
-              fs.writeFileSync(concatList, segFiles.map(f => 'file \'' + f + '\'').join('\n'));
-              const joinedP = path.join(TEMP_DIR, 'joined_' + pId + '.mp4');
-              tmp.push(joinedP);
-              await execAsync('ffmpeg -y -f concat -safe 0 -i "' + concatList + '" -c copy "' + joinedP + '"', { maxBuffer: 50*1024*1024, timeout: 120000 });
-              // Now apply color + audio on joined
-              log('Color grade + audio mix হচ্ছে...');
-              await execAsync('ffmpeg -y -i "' + joinedP + '" -i "' + phP + '" -filter_complex "[0:v]' + vf + flashFilter + '[outv];[0:a]volume=' + oVol + '[oa];[1:a]atrim=start=' + dp + ',asetpts=PTS-STARTPTS,volume=' + pVol + '[pa];[oa][pa]amix=inputs=2:duration=first[outa]" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 22 -threads 2 -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 600000 });
-              log('Beat sync সম্পন্ন ✓');
-              tmp.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
-              try { if(fs.existsSync(srtP)) fs.unlinkSync(srtP); } catch {}
-              log('সম্পন্ন! Preview দেখুন ✓');
-              jobs[pId] = { status: 'preview', log: jobs[pId].log, result: { previewUrl: '/temp/mvout_' + pId + '.mp4', outPath: outP, procJobId: pId, beatTimes } };
-              return;
-            }
+            const concatList = path.join(TEMP_DIR, 'concat_' + pId + '.txt'); tmp.push(concatList);
+            fs.writeFileSync(concatList, segFiles.map(f => "file '" + f + "'").join('\n'));
+            const joinedP = path.join(TEMP_DIR, 'joined_' + pId + '.mp4'); tmp.push(joinedP);
+            await execAsync('ffmpeg -y -f concat -safe 0 -i "' + concatList + '" -c copy "' + joinedP + '"', { maxBuffer: 100*1024*1024, timeout: 120000 });
+            log('Audio mix হচ্ছে...');
+            await execAsync(
+              'ffmpeg -y -i "' + joinedP + '" -i "' + phP + '" -filter_complex "[1:a]atrim=start=' + dp + ',asetpts=PTS-STARTPTS,volume=' + pVol + '[outa]" -map "0:v" -map "[outa]" -c:v copy -c:a aac -shortest "' + outP + '"',
+              { maxBuffer: 100*1024*1024, timeout: 300000 }
+            );
+            log('Beat sync সম্পন্ন ✓');
+            tmp.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
+            try { if(fs.existsSync(srtP)) fs.unlinkSync(srtP); } catch {}
+            log('সম্পন্ন! Preview দেখুন ✓');
+            jobs[pId] = { status: 'preview', log: jobs[pId].log, result: { previewUrl: '/temp/mvout_' + pId + '.mp4', outPath: outP, procJobId: pId, beatTimes } };
+            return;
           }
         }
-        // Fallback: just flash effect without cut
+        // Fallback: flash only
         log('Flash effect দিয়ে beat sync হচ্ছে...');
-        await execAsync('ffmpeg -y -i "' + clipP + '" -i "' + phP + '" -filter_complex "[0:v]' + vf + flashFilter + '[outv];[0:a]volume=' + oVol + '[oa];[1:a]atrim=start=' + dp + ',asetpts=PTS-STARTPTS,volume=' + pVol + '[pa];[oa][pa]amix=inputs=2:duration=first[outa]" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 22 -threads 2 -c:a aac -shortest "' + outP + '"', { maxBuffer: 100*1024*1024, timeout: 600000 });
+        const flashExpr = beatTimes.map(bt => 'between(t,' + bt + ',' + (bt+0.08).toFixed(3) + ')').join('+');
+        const flashFilter = flashExpr ? ',eq=brightness=\'if(' + flashExpr + ',0.3,0)\':contrast=\'if(' + flashExpr + ',1.4,1)\'' : '';
+        await execAsync(
+          'ffmpeg -y -i "' + clipP + '" -i "' + phP + '" -filter_complex "[0:v]' + vf + flashFilter + '[outv];[1:a]atrim=start=' + dp + ',asetpts=PTS-STARTPTS,volume=' + pVol + '[outa]" -map "[outv]" -map "[outa]" -c:v libx264 -preset ultrafast -crf 22 -threads 2 -c:a aac -shortest "' + outP + '"',
+          { maxBuffer: 100*1024*1024, timeout: 600000 }
+        );
         tmp.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
         try { if(fs.existsSync(srtP)) fs.unlinkSync(srtP); } catch {}
         log('সম্পন্ন! Preview দেখুন ✓');
