@@ -357,7 +357,7 @@ app.post('/api/rt/gallery-upload', rtGalleryUpload.single('video'), async (req, 
 
 // ========== TROLL EDIT REALTIME ==========
 app.post('/api/run/realtime', async (req, res) => {
-  const { ytUrl, driveFileId, tempPath, phonkFileId, dropTime, freezeSec, introText, introSize, introPos, textTime, climaxText, climaxSize, climaxPos, skullSize, skullPos, colorBrightness, colorContrast, colorSaturation, colorPreset, beatSync, phonkLoop, noSkull } = req.body;
+  const { ytUrl, driveFileId, tempPath, phonkFileId, dropTime, freezeSec, introText, introSize, introPos, textTime, climaxText, climaxSize, climaxPos, skullSize, skullPos, colorBrightness, colorContrast, colorSaturation, colorPreset, customTone, beatSync, phonkLoop, noSkull } = req.body;
   if ((!ytUrl && !driveFileId && !tempPath) || !phonkFileId) return res.status(400).json({ error: 'video source and phonkFileId required' });
   const jobId = createJob(); res.json({ jobId });
   (async () => {
@@ -419,6 +419,7 @@ app.post('/api/run/realtime', async (req, res) => {
       else if (colorPreset === 'phonk_red') { br = -0.05; ct = 1.6; st = 0.8; }
       else if (colorPreset === 'cold_blue') { br = 0; ct = 1.3; st = 0.5; }
       else if (colorPreset === 'original' || colorPreset === 'none') { br = 0; ct = 1.0; st = 1.0; }
+      // custom: use manual slider values as-is (already parsed above)
 
       const ss = parseInt(skullSize) || 280;
       const sp = skullPos || 'center';
@@ -431,8 +432,18 @@ app.post('/api/run/realtime', async (req, res) => {
       const iSz = parseInt(introSize) || 40, iTm = parseFloat(textTime) || 2;
       const cSz = parseInt(climaxSize) || 48;
 
+      // tone filter from preset or custom
+      const tone = colorPreset === 'custom' ? (customTone || 'none') :
+        (colorPreset === 'believer' ? 'cold' : colorPreset === 'dark_cinema' ? 'warm' :
+         colorPreset === 'phonk_red' ? 'red' : colorPreset === 'cold_blue' ? 'blue' : 'none');
+      const toneF = tone === 'cold' ? ',colorbalance=rs=-0.1:gs=-0.05:bs=0.15:rm=-0.1:gm=-0.05:bm=0.1'
+                  : tone === 'warm' ? ',colorbalance=rs=0.1:gs=0.05:bs=-0.1:rm=0.08:gm=0.03:bm=-0.08'
+                  : tone === 'red'  ? ',colorbalance=rs=0.2:gs=-0.1:bs=-0.1:rm=0.15:gm=-0.08:bm=-0.08'
+                  : tone === 'blue' ? ',colorbalance=rs=-0.15:gs=0:bs=0.2:rm=-0.1:gm=0:bm=0.15'
+                  : '';
+
       // "before" part = video before freeze, with optional beat sync cuts
-      const beforeVf = sc + ',eq=brightness=' + br + ':contrast=' + ct + ':saturation=' + st +
+      const beforeVf = sc + ',eq=brightness=' + br + ':contrast=' + ct + ':saturation=' + st + toneF +
         (it ? ',drawtext=text=\'' + it + '\':fontcolor=white:fontsize=' + iSz + ':x=(w-text_w)/2:y=' + py(introPos||'top') + ':enable=\'between(t\\,0\\,' + iTm + ')\':box=1:boxcolor=black@0.5:boxborderw=6' : '');
 
       const outP = path.join(TEMP_DIR, 'rt_out_' + jobId + '.mp4');
@@ -845,7 +856,7 @@ app.post('/api/movie/process', async (req, res) => {
               tmp.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
               try { if(fs.existsSync(srtP)) fs.unlinkSync(srtP); } catch {}
               log('সম্পন্ন! Preview দেখুন ✓');
-              jobs[pId] = { status: 'preview', log: jobs[pId].log, result: { previewUrl: '/temp/mvout_' + pId + '.mp4', outPath: outP, procJobId: pId } };
+              jobs[pId] = { status: 'preview', log: jobs[pId].log, result: { previewUrl: '/temp/mvout_' + pId + '.mp4', outPath: outP, procJobId: pId, beatTimes } };
               return;
             }
           }
@@ -856,7 +867,7 @@ app.post('/api/movie/process', async (req, res) => {
         tmp.forEach(f => { try { if(fs.existsSync(f)) fs.unlinkSync(f); } catch {} });
         try { if(fs.existsSync(srtP)) fs.unlinkSync(srtP); } catch {}
         log('সম্পন্ন! Preview দেখুন ✓');
-        jobs[pId] = { status: 'preview', log: jobs[pId].log, result: { previewUrl: '/temp/mvout_' + pId + '.mp4', outPath: outP, procJobId: pId } };
+        jobs[pId] = { status: 'preview', log: jobs[pId].log, result: { previewUrl: '/temp/mvout_' + pId + '.mp4', outPath: outP, procJobId: pId, beatTimes } };
         return;
       }
       // ===== NORMAL PROCESSING =====
