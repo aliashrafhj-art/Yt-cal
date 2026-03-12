@@ -67,6 +67,17 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
 #editPhonkLoop:checked ~ span:last-of-type { transform: translateX(20px); }
 #editNoSkull:checked ~ span:first-of-type { background: var(--accent2) !important; }
 #editNoSkull:checked ~ span:last-of-type { transform: translateX(20px); }
+
+@keyframes shake {
+  0%,100%{transform:translate(0,0) rotate(0deg)}
+  15%{transform:translate(-4px,2px) rotate(-1deg)}
+  30%{transform:translate(4px,-2px) rotate(1deg)}
+  45%{transform:translate(-3px,3px) rotate(-0.5deg)}
+  60%{transform:translate(3px,-1px) rotate(0.5deg)}
+  75%{transform:translate(-2px,2px) rotate(-0.3deg)}
+  90%{transform:translate(2px,-1px) rotate(0.2deg)}
+}
+.beat-shake { animation: shake 0.35s ease-in-out; }
 </style>
 </head>
 <body>
@@ -298,7 +309,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
     <div id="rtPhonkList" style="max-height:150px;overflow-y:auto;margin-bottom:8px"><div style="font-size:12px;color:var(--text2)">লোড করুন</div></div>
     <div style="display:flex;align-items:center;gap:8px">
       <label class="upload-form-label" style="margin:0;white-space:nowrap">Drop Time (s)</label>
-      <input class="input" id="rtDropTime" type="number" value="0" min="0" step="0.5" style="width:80px">
+      <input class="input" id="rtDropTime" type="number" value="0" min="0" step="0.5" style="width:80px" onchange="saveDropTime()">
     </div>
   </div>
 
@@ -315,6 +326,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
         <button class="btn btn-sm btn-ghost" id="presetDark" onclick="setPreset('dark_cinema')">Dark</button>
         <button class="btn btn-sm btn-ghost" id="presetRed" onclick="setPreset('phonk_red')">Phonk Red</button>
         <button class="btn btn-sm btn-ghost" id="presetBlue" onclick="setPreset('cold_blue')">Cold Blue</button>
+        <button class="btn btn-sm btn-ghost" id="presetCustom" onclick="setPreset('custom')" style="background:linear-gradient(90deg,#7c3aed,#db2777)">🎨 Custom</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
         <div>
@@ -328,6 +340,33 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
         <div>
           <label class="upload-form-label">Saturation</label>
           <input class="input" id="colorSat" type="number" value="1" step="0.05" min="0" max="3" style="font-size:12px">
+        </div>
+      </div>
+
+      <!-- Custom Color Panel -->
+      <div id="customColorPanel" style="display:none;margin-top:12px;background:var(--surface2);border-radius:10px;padding:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:10px">🎨 Custom Color Adjust</div>
+        <div style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:3px"><span>☀️ Brightness</span><span id="brightVal">0</span></div>
+          <input type="range" min="-1" max="1" step="0.05" value="0" style="width:100%;accent-color:#7c3aed" oninput="document.getElementById('brightVal').textContent=this.value;document.getElementById('colorBright').value=this.value">
+        </div>
+        <div style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:3px"><span>🔲 Contrast</span><span id="contrastVal">1</span></div>
+          <input type="range" min="0.5" max="3" step="0.05" value="1" style="width:100%;accent-color:#7c3aed" oninput="document.getElementById('contrastVal').textContent=this.value;document.getElementById('colorContrast').value=this.value">
+        </div>
+        <div style="margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:3px"><span>🌈 Saturation</span><span id="satVal">1</span></div>
+          <input type="range" min="0" max="3" step="0.05" value="1" style="width:100%;accent-color:#7c3aed" oninput="document.getElementById('satVal').textContent=this.value;document.getElementById('colorSat').value=this.value">
+        </div>
+        <div>
+          <div style="font-size:10px;color:var(--text2);margin-bottom:6px">🎨 Tone</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-sm btn-ghost" id="toneNone" onclick="setTone('none')" style="font-size:10px">None</button>
+            <button class="btn btn-sm btn-ghost" id="toneCold" onclick="setTone('cold')" style="font-size:10px">❄️ Cold</button>
+            <button class="btn btn-sm btn-ghost" id="toneWarm" onclick="setTone('warm')" style="font-size:10px">🔥 Warm</button>
+            <button class="btn btn-sm btn-ghost" id="toneRed" onclick="setTone('red')" style="font-size:10px">🔴 Red</button>
+            <button class="btn btn-sm btn-ghost" id="toneBlue" onclick="setTone('blue')" style="font-size:10px">🔵 Blue</button>
+          </div>
         </div>
       </div>
     </div>
@@ -348,7 +387,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
         <div style="font-size:11px;font-weight:700;color:var(--text2)">🥁 Beat Sync Cut</div>
         <div style="font-size:10px;color:var(--text2);margin-top:2px">Phonk beat-এ video jump cut হবে</div>
       </div>
-      <div id="tog_editBeatSync" onclick="toggleSwitch('editBeatSync')" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;background:var(--surface2);border-radius:24px;transition:.3s">
+      <div id="tog_editBeatSync" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;background:var(--surface2);border-radius:24px;z-index:10;transition:.3s">
         <div id="knob_editBeatSync" style="position:absolute;height:18px;width:18px;left:3px;top:3px;background:white;border-radius:50%;transition:.3s"></div>
       </div>
     </div>
@@ -359,7 +398,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
         <div style="font-size:11px;font-weight:700;color:var(--text2)">🔁 Phonk Loop</div>
         <div style="font-size:10px;color:var(--text2);margin-top:2px">Phonk শেষ হলে বারবার চলবে</div>
       </div>
-      <div id="tog_editPhonkLoop" onclick="toggleSwitch('editPhonkLoop')" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;background:var(--surface2);border-radius:24px;transition:.3s">
+      <div id="tog_editPhonkLoop" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;background:var(--surface2);border-radius:24px;z-index:10;transition:.3s">
         <div id="knob_editPhonkLoop" style="position:absolute;height:18px;width:18px;left:3px;top:3px;background:white;border-radius:50%;transition:.3s"></div>
       </div>
     </div>
@@ -370,7 +409,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
         <div style="font-size:11px;font-weight:700;color:var(--text2)">💀 Skull বন্ধ</div>
         <div style="font-size:10px;color:var(--text2);margin-top:2px">Skull ছাড়া edit হবে</div>
       </div>
-      <div id="tog_editNoSkull" onclick="toggleSwitch('editNoSkull')" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;background:var(--surface2);border-radius:24px;transition:.3s">
+      <div id="tog_editNoSkull" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;background:var(--surface2);border-radius:24px;z-index:10;transition:.3s">
         <div id="knob_editNoSkull" style="position:absolute;height:18px;width:18px;left:3px;top:3px;background:white;border-radius:50%;transition:.3s"></div>
       </div>
     </div>
@@ -649,10 +688,19 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
           <div style="font-size:11px;font-weight:700;color:var(--text2)">🥁 Beat Sync Cut</div>
           <div style="font-size:10px;color:var(--text2);margin-top:2px">Phonk-এর beat-এ video jump cut হবে</div>
         </div>
-        <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0">
-          <input type="checkbox" id="beatSyncToggle" style="opacity:0;width:0;height:0">
-          <span onclick="this.previousElementSibling.click()" style="position:absolute;cursor:pointer;inset:0;background:var(--surface2);border-radius:24px;transition:.3s" id="beatSyncSlider"></span>
-        </label>
+        <div id="tog_movieBeatSync" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;background:var(--surface2);border-radius:24px;z-index:10;transition:.3s">
+          <div id="knob_movieBeatSync" style="position:absolute;height:18px;width:18px;left:3px;top:3px;background:white;border-radius:50%;transition:.3s"></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--text2)">📳 Beat Shake</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Beat-এ preview shake করবে</div>
+      </div>
+      <div id="tog_movieShake" style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;cursor:pointer;background:var(--surface2);border-radius:24px;z-index:10;transition:.3s">
+        <div id="knob_movieShake" style="position:absolute;height:18px;width:18px;left:3px;top:3px;background:white;border-radius:50%;transition:.3s"></div>
       </div>
     </div>
 
@@ -685,7 +733,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,sans-serif
   <div id="moviePreviewSection" style="display:none">
     <div class="card">
       <div class="card-title">👁 Output Preview</div>
-      <video id="moviePreviewVideo" controls style="width:100%;border-radius:8px;background:#000;max-height:400px"></video>
+      <video id="moviePreviewVideo" controls playsinline autoplay muted style="width:100%;border-radius:8px;background:#000;max-height:400px"></video>
     </div>
     <button class="btn btn-green btn-full" onclick="uploadMovieClip()" id="movieUploadBtn" style="margin-bottom:10px">📤 YouTube-এ Upload করো</button>
   </div>
@@ -901,18 +949,37 @@ let selectedPhonkName = null;
 let activePreset = 'none';
 let currentEditJobId = null;
 
+let activeTone = 'none';
+function setTone(t) {
+  activeTone = t;
+  ['None','Cold','Warm','Red','Blue'].forEach(n => { const el = document.getElementById('tone'+n); if(el) el.className='btn btn-sm btn-ghost'; el&&(el.style.fontSize='10px'); });
+  const el = document.getElementById('tone'+t.charAt(0).toUpperCase()+t.slice(1));
+  if (el) { el.className='btn btn-sm btn-blue'; el.style.fontSize='10px'; }
+}
 function setPreset(p) {
   activePreset = p;
-  ['None','Believer','Dark','Red','Blue'].forEach(n => { const el = document.getElementById('preset'+n); if(el) el.className='btn btn-sm btn-ghost'; });
-  const map = {none:'None',believer:'Believer',dark_cinema:'Dark',phonk_red:'Red',cold_blue:'Blue'};
-  const el = document.getElementById('preset'+map[p]);
+  ['None','Believer','Dark','Red','Blue','Custom'].forEach(n => { const el = document.getElementById('preset'+n); if(el) el.className='btn btn-sm btn-ghost'; });
+  const map = {none:'None', believer:'Believer', dark_cinema:'Dark', phonk_red:'Red', cold_blue:'Blue', custom:'Custom'};
+  const el = document.getElementById('preset'+(map[p]||''));
   if (el) el.className = 'btn btn-sm btn-blue';
-  if (p==='dark') { document.getElementById('colorBright').value=-0.1; document.getElementById('colorContrast').value=1.3; document.getElementById('colorSat').value=0.8; }
-  else if (p==='believer') { document.getElementById('colorBright').value=-0.08; document.getElementById('colorContrast').value=1.5; document.getElementById('colorSat').value=0.25; }
-  else if (p==='dark_cinema') { document.getElementById('colorBright').value=-0.15; document.getElementById('colorContrast').value=1.4; document.getElementById('colorSat').value=0.6; }
-  else if (p==='phonk_red') { document.getElementById('colorBright').value=-0.05; document.getElementById('colorContrast').value=1.6; document.getElementById('colorSat').value=0.8; }
-  else if (p==='cold_blue') { document.getElementById('colorBright').value=0; document.getElementById('colorContrast').value=1.2; document.getElementById('colorSat').value=0.7; }
-  else { document.getElementById('colorBright').value=0; document.getElementById('colorContrast').value=1; document.getElementById('colorSat').value=1; }
+  const presets = {
+    believer:    [-0.08, 1.5, 0.25],
+    dark_cinema: [-0.15, 1.4, 0.6],
+    phonk_red:   [-0.05, 1.6, 0.8],
+    cold_blue:   [0,     1.3, 0.5],
+    none:        [0,     1.0, 1.0],
+    original:    [0,     1.0, 1.0],
+  };
+  const v = presets[p];
+  if (v) {
+    document.getElementById('colorBright').value = v[0];
+    document.getElementById('colorContrast').value = v[1];
+    document.getElementById('colorSat').value = v[2];
+    document.getElementById('customColorPanel').style.display = 'none';
+  }
+  if (p === 'custom') {
+    document.getElementById('customColorPanel').style.display = 'block';
+  }
 }
 
 function previewThumb() {
@@ -946,6 +1013,13 @@ function selectPhonk(id, name, el) {
   el.classList.add('selected');
   const saved = phonkData.find(p => p.name === name);
   if (saved) document.getElementById('rtDropTime').value = saved.dropTime || 0;
+  else document.getElementById('rtDropTime').value = 0;
+}
+function saveDropTime() {
+  const val = parseFloat(document.getElementById('rtDropTime').value) || 0;
+  if (!selectedPhonkName) return;
+  const p = phonkData.find(p => p.name === selectedPhonkName);
+  if (p) { p.dropTime = val; renderPhonkList(); }
 }
 
 // ========== DOWNLOAD → DRIVE ==========
@@ -996,14 +1070,22 @@ function toggleSwitch(id) {
   toggleState[id] = !toggleState[id];
   const tog = document.getElementById('tog_' + id);
   const knob = document.getElementById('knob_' + id);
+  if (!tog || !knob) return;
   if (toggleState[id]) {
-    tog.style.background = 'var(--accent2)';
+    tog.style.background = '#7c3aed';
     knob.style.left = '23px';
   } else {
     tog.style.background = 'var(--surface2)';
     knob.style.left = '3px';
   }
 }
+// Bind all toggles via JS (not onclick attr) after DOM ready
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('[id^="tog_"]').forEach(el => {
+    const id = el.id.replace('tog_', '');
+    el.addEventListener('click', (e) => { e.stopPropagation(); toggleSwitch(id); });
+  });
+});
 
 // ===== REALTIME SOURCE TABS =====
 let rtSelectedDriveFileId = null;
@@ -1104,6 +1186,7 @@ async function runEdit() {
     colorContrast: document.getElementById('colorContrast').value,
     colorSaturation: document.getElementById('colorSat').value,
     colorPreset: activePreset,
+    customTone: activePreset === 'custom' ? activeTone : undefined,
     beatSync: toggleState.editBeatSync || false,
     phonkLoop: toggleState.editPhonkLoop || false,
     noSkull: toggleState.editNoSkull || false,
@@ -1691,7 +1774,7 @@ async function processMovieClip() {
     overlaySize: parseInt(document.getElementById('overlaySize').value) || 18,
     overlayColor: document.getElementById('overlayColor').value || 'white',
     textPosY: textPosY,
-    beatSync: document.getElementById('beatSyncToggle').checked,
+    beatSync: toggleState.movieBeatSync || false,
   };
 
   try {
@@ -1708,9 +1791,24 @@ async function processMovieClip() {
           const mvid = document.getElementById('moviePreviewVideo');
           mvid.src = B()+d2.result.previewUrl+'?t='+Date.now();
           mvid.load();
+          mvid.play().catch(()=>{});
           document.getElementById('moviePreviewSection').style.display = 'block';
           document.getElementById('moviePreviewSection').scrollIntoView({behavior:'smooth'});
           toast('সম্পন্ন! Preview দেখুন 👇');
+          // Beat shake animation
+          if (toggleState.movieShake && d2.result.beatTimes && d2.result.beatTimes.length) {
+            const beats = d2.result.beatTimes;
+            const wrapper = document.getElementById('moviePreviewSection');
+            mvid.addEventListener('play', function startShake() {
+              mvid.removeEventListener('play', startShake);
+              beats.forEach(bt => {
+                setTimeout(() => {
+                  wrapper.classList.add('beat-shake');
+                  setTimeout(() => wrapper.classList.remove('beat-shake'), 350);
+                }, bt * 1000);
+              });
+            }, { once: true });
+          }
         } else if (d2.status === 'error') { clearInterval(t); btn.textContent='🎬 Process করো'; btn.disabled=false; toast('Error!'); }
       } catch {}
     }, 2000);
